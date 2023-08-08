@@ -1,13 +1,13 @@
 FROM node:18
 
-WORKDIR /app
+# For TimeZone Setting. NOT for alpine OS.
+ENV TZ=Asia/Seoul
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime
 
-COPY package*.json ./
+WORKDIR /usr/app
 
-RUN npm install
-
+# Copy all except .dockerignore
 COPY . .
+RUN npm install --production
 
-RUN npm run build
-
-CMD [ "npm", "run", "start:dev" ]
+CMD ["npm", "run", "start:prod"]

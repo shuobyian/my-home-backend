@@ -86,4 +86,8 @@ export class ItemService {
   async findOne(id: number) {
     return await this.item.findOne({ where: { id } });
   }
+
+  async findOneByName(name?: string) {
+    return await this.item.findOne({ where: { name } });
+  }
 }
