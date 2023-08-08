@@ -8,18 +8,23 @@ import { Result } from 'src/result/entities/result.entity';
 import { Market } from 'src/market/entities/market.entity';
 import { ResultModule } from 'src/result/result.module';
 import { MarketModule } from 'src/market/market.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
     TypeOrmModule.forRoot({
       type: 'postgres',
-      host: process.env.DB_HOST,
-      port: parseInt(process.env.DB_PORT),
-      username: process.env.DB_USERNAME,
-      password: `${process.env.DB_PASSWORD}`,
-      database: process.env.DB_NAME,
+      host: process.env.POSTGRES_HOST,
+      port: parseInt(process.env.POSTGRES_PORT),
+      username: process.env.POSTGRES_USER,
+      password: `${process.env.POSTGRES_PASSWORD}`,
+      database: process.env.POSTGRES_NAME,
       entities: [Item, Result, Market],
-      synchronize: false,
+      synchronize: true,
     }),
     ItemModule,
     ResultModule,

@@ -4,6 +4,7 @@ import { ItemService } from 'src/item/item.service';
 import { MarketService } from 'src/market/market.service';
 // import { CreateResultDto } from 'src/result/dto/create-result-dto';
 import { Result } from 'src/result/entities/result.entity';
+import { Material } from 'src/result/type/Material';
 import { DataSource, Repository } from 'typeorm';
 
 @Injectable()
@@ -21,10 +22,10 @@ export class ResultService {
     const itemList = await this.itemService.findAll();
     const marketList = await this.marketService.findAll();
 
-    const basic = [];
-    const middle = [];
-
     const resultList = itemList.map((item) => {
+      const basic: Material[] = [];
+      let middle: Material[] = [];
+
       const { materials, ...rest } = item;
       for (const material of materials) {
         if (!material.base) {
@@ -38,7 +39,8 @@ export class ResultService {
           middle.push(material);
         }
       }
-      while (middle.length > 0) {
+
+      while (middle.length !== 0) {
         for (const item of itemList) {
           if (middle[0].name === item.name) {
             for (const material of item.materials) {
@@ -49,25 +51,31 @@ export class ResultService {
                 if (isAlready !== -1) {
                   basic[isAlready].count += middle[0].count * material.count;
                 } else {
-                  basic.push(material);
+                  basic.push({
+                    ...material,
+                    count: middle[0].count * material.count,
+                  });
                 }
               } else {
-                middle.push(item);
+                middle.push({
+                  ...material,
+                  count: middle[0].count * material.count,
+                });
               }
             }
-            middle.slice(1);
+            middle = middle.slice(1);
             break;
           }
         }
-        if (!middle[0].base) {
+        if (middle.length > 0 && !middle[0].base) {
           const isAlready = basic.findIndex((b) => b.name === middle[0].name);
           if (isAlready !== -1) {
             basic[isAlready].count += middle[0].count;
           } else {
             basic.push(middle[0]);
           }
+          middle = middle.slice(1);
         }
-        middle.slice(1);
       }
       const prices: number[] = [];
       for (const b of basic) {

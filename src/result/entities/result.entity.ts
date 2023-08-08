@@ -14,13 +14,13 @@ export class Result {
   @Column('integer', { name: 'craftingPrice' })
   craftingPrice: number;
 
-  @Column('string', { name: 'basic' })
+  @Column('varchar', { name: 'basic' })
   basic: string;
 
-  @Column('string', { name: 'counts' })
+  @Column('varchar', { name: 'counts' })
   counts: string;
 
-  @Column('string', { name: 'prices' })
+  @Column('varchar', { name: 'prices' })
   prices: string;
 
   @Column('integer', { name: 'totalPrice' })
