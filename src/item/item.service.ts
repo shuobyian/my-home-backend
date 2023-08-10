@@ -1,8 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateItemDto } from 'src/item/dto/create-item-dto';
 import { RawItemDto, ReadItemDto } from 'src/item/dto/read-item-dto';
 import { Item } from 'src/item/entities/item.entity';
+import { ResultService } from 'src/result/result.service';
 import { Page } from 'src/result/type/Page';
 import { DataSource, Repository } from 'typeorm';
 
@@ -11,14 +17,31 @@ export class ItemService {
   constructor(
     private dataSource: DataSource,
     @InjectRepository(Item) private readonly item: Repository<Item>,
+    @Inject(forwardRef(() => ResultService))
+    private resultService: ResultService,
   ) {}
 
   async create(createItemDto: CreateItemDto) {
     const { materials, ...rest } = createItemDto;
 
-    if (this.item.findOne({ where: { name: createItemDto.name } })) {
+    if (this.findOneByName(createItemDto.name)) {
       throw new BadRequestException('중복된 아이템입니다.');
     }
+
+    const isExisted = await Promise.all(
+      materials.map((material) => this.findOneByName(material.name)),
+    );
+    if (!isExisted.every((exist) => exist)) {
+      throw new BadRequestException('존재하지 않은 재료입니다.');
+    }
+
+    for (const material of materials) {
+      if (!this.findOneByName(material.name)) {
+        throw new BadRequestException(`${material.name}는 존재하지 않습니다.`);
+      }
+    }
+
+    await this.resultService.create(createItemDto);
 
     return await this.item.save(
       this.item.create({

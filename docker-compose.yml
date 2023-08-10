@@ -11,8 +11,8 @@ services:
     ports:
       - '$POSTGRES_PORT:$POSTGRES_PORT_DOCKER'
 
-    # volumes:
-    #   - postgres_data:/var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - db_network
 
