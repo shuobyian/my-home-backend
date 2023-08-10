@@ -11,7 +11,12 @@ export class ResultController {
   }
 
   @Get()
-  findAll(@Query('name') name?: string) {
-    return this.resultService.findOneByName(name);
+  findAll(
+    @Query('page') page: number,
+    @Query('size') size: number,
+    @Query('name') name?: string,
+    @Query('count') count?: number,
+  ) {
+    return this.resultService.findAll(page, size, name, count);
   }
 }

@@ -1,11 +1,14 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ItemService } from 'src/item/item.service';
 import { MarketService } from 'src/market/market.service';
+import { ReadResultDto } from 'src/result/dto/read-item-dto';
 // import { CreateResultDto } from 'src/result/dto/create-result-dto';
 import { Result } from 'src/result/entities/result.entity';
 import { Material } from 'src/result/type/Material';
-import { DataSource, Repository } from 'typeorm';
+import { Page } from 'src/result/type/Page';
+import { DataSource, Like, Repository } from 'typeorm';
 
 @Injectable()
 export class ResultService {
@@ -19,6 +22,8 @@ export class ResultService {
   ) {}
 
   async createAll() {
+    await this.result.save([]);
+
     const itemList = await this.itemService.findAll();
     const marketList = await this.marketService.findAll();
 
@@ -29,9 +34,9 @@ export class ResultService {
       const { materials, ...rest } = item;
       for (const material of materials) {
         if (!material.base) {
-          const isAlready = basic.findIndex((b) => b.name === material.name);
-          if (isAlready !== -1) {
-            basic[isAlready].count += material.count;
+          const included = basic.findIndex((b) => b.name === material.name);
+          if (included !== -1) {
+            basic[included].count += material.count;
           } else {
             basic.push(material);
           }
@@ -42,20 +47,21 @@ export class ResultService {
 
       while (middle.length !== 0) {
         for (const item of itemList) {
-          if (middle[0].name === item.name) {
+          if (middle.length > 0 && middle[0].name === item.name) {
             for (const material of item.materials) {
-              if (!material.base) {
-                const isAlready = basic.findIndex(
+              if (!middle[0].base) {
+                const included = basic.findIndex(
                   (b) => b.name === material.name,
                 );
-                if (isAlready !== -1) {
-                  basic[isAlready].count += middle[0].count * material.count;
+                if (included !== -1) {
+                  basic[included].count += middle[0].count * material.count;
                 } else {
                   basic.push({
                     ...material,
                     count: middle[0].count * material.count,
                   });
                 }
+                middle = middle.slice(1);
               } else {
                 middle.push({
                   ...material,
@@ -68,9 +74,9 @@ export class ResultService {
           }
         }
         if (middle.length > 0 && !middle[0].base) {
-          const isAlready = basic.findIndex((b) => b.name === middle[0].name);
-          if (isAlready !== -1) {
-            basic[isAlready].count += middle[0].count;
+          const included = basic.findIndex((b) => b.name === middle[0].name);
+          if (included !== -1) {
+            basic[included].count += middle[0].count;
           } else {
             basic.push(middle[0]);
           }
@@ -109,11 +115,56 @@ export class ResultService {
   //   return await this.result.save(this.result.create({ ...rest }));
   // }
 
-  async findAll() {
-    return await this.result.find();
-  }
+  async findAll(
+    page: number,
+    size: number,
+    name?: string,
+    _count?: number,
+  ): Promise<Page<ReadResultDto>> {
+    const [resultList, totalElements] = await this.result.findAndCount({
+      where: { name: name ? Like(`%${name}%`) : undefined },
+      take: size,
+      skip: page * size,
+    });
+    const count = _count ?? 1;
 
-  async findOneByName(name?: string) {
-    return await this.result.find({ where: { name } });
+    const itemList = await Promise.all(
+      resultList.map((result) => this.itemService.findOneByName(result.name)),
+    );
+
+    return {
+      totalElements,
+      content: resultList.map((result) => {
+        const { id, basic, prices, counts, ...rest } = result;
+        const nameList = basic.split(',');
+        const priceList = prices.split(',');
+        const countList = counts.split(',');
+
+        const rates = [1, 1.039, 1.156, 1.35, 1622];
+        const rate = count < 5 ? rates[count - 1] : 1.613666 + 0.001555;
+
+        const item = itemList.find((i) => i.name === result.name);
+
+        return {
+          ...rest,
+          resultId: result.id,
+          item: {
+            ...item,
+            materials: item.materials.map((material) => ({
+              ...material,
+              count: material.count * count,
+            })),
+          },
+          craftingPrice: Math.floor(
+            Number(result.craftingPrice) * count * rate,
+          ),
+          basic: Array.from({ length: nameList.length }, (_, index) => ({
+            name: nameList[index],
+            price: Number(priceList[index]) * count,
+            count: Number(countList[index]) * count,
+          })),
+        };
+      }),
+    };
   }
 }

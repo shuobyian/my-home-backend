@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateItemDto } from 'src/item/dto/create-item-dto';
+import { RawItemDto, ReadItemDto } from 'src/item/dto/read-item-dto';
 import { Item } from 'src/item/entities/item.entity';
 import { DataSource, Repository } from 'typeorm';
 
@@ -42,52 +43,66 @@ export class ItemService {
     );
   }
 
-  async findAll() {
+  async findAll(): Promise<ReadItemDto[]> {
     const itemList = await this.item.find();
-    return itemList.map((item) => {
-      const { name, level, craftingPrice, ...rest } = item;
-      const materials = [
-        {
-          name: rest.material1,
-          base: rest.base1 === 1 ? true : false,
-          count: rest.count1,
-        },
-        rest.material2 && {
-          name: rest.material2,
-          base: rest.base2 === 1 ? true : false,
-          count: rest.count2,
-        },
-        rest.material3 && {
-          name: rest.material3,
-          base: rest.base3 === 1 ? true : false,
-          count: rest.count3,
-        },
-        rest.material4 && {
-          name: rest.material4,
-          base: rest.base4 === 1 ? true : false,
-          count: rest.count4,
-        },
-        rest.material5 && {
-          name: rest.material5,
-          base: rest.base5 === 1 ? true : false,
-          count: rest.count5,
-        },
-      ].filter(Boolean);
-      return {
-        itemId: item.id,
-        name,
-        level,
-        craftingPrice,
-        materials,
-      };
-    });
+    return itemList.map((item) => ({
+      itemId: item.id,
+      ...this.parseItem(item),
+    }));
   }
 
-  async findOne(id: number) {
-    return await this.item.findOne({ where: { id } });
+  async findOne(id: number): Promise<ReadItemDto> {
+    const item = await this.item.findOne({ where: { id } });
+
+    return {
+      itemId: item.id,
+      ...this.parseItem(item),
+    };
   }
 
-  async findOneByName(name?: string) {
-    return await this.item.findOne({ where: { name } });
+  async findOneByName(_name?: string): Promise<ReadItemDto> {
+    const item = await this.item.findOne({ where: { name: _name } });
+
+    return {
+      itemId: item.id,
+      ...this.parseItem(item),
+    };
+  }
+
+  parseItem(item: RawItemDto) {
+    const { name, level, craftingPrice, ...rest } = item;
+    const materials = [
+      {
+        name: rest.material1,
+        base: rest.base1 === 1 ? true : false,
+        count: rest.count1,
+      },
+      rest.material2 && {
+        name: rest.material2,
+        base: rest.base2 === 1 ? true : false,
+        count: rest.count2,
+      },
+      rest.material3 && {
+        name: rest.material3,
+        base: rest.base3 === 1 ? true : false,
+        count: rest.count3,
+      },
+      rest.material4 && {
+        name: rest.material4,
+        base: rest.base4 === 1 ? true : false,
+        count: rest.count4,
+      },
+      rest.material5 && {
+        name: rest.material5,
+        base: rest.base5 === 1 ? true : false,
+        count: rest.count5,
+      },
+    ].filter(Boolean);
+    return {
+      name,
+      level,
+      craftingPrice,
+      materials,
+    };
   }
 }
