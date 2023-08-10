@@ -1,9 +1,29 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('result', { schema: 'public' })
 export class Result {
   @PrimaryGeneratedColumn({ type: 'integer', name: 'id' })
   id: number;
+
+  @CreateDateColumn({
+    type: 'timestamp with time zone',
+    name: 'createdAt',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
+  createdAt: string;
+
+  @UpdateDateColumn({
+    type: 'timestamp with time zone',
+    name: 'updatedAt',
+    nullable: true,
+  })
+  updatedAt: string | null;
 
   @Column('varchar', { unique: true, name: 'name' })
   name: string;

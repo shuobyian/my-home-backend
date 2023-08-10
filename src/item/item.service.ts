@@ -21,6 +21,13 @@ export class ItemService {
     private resultService: ResultService,
   ) {}
 
+  async login({ password }: { password: string }) {
+    if (password !== process.env.PASSWORD) {
+      throw new BadRequestException('비밀번호가 올바르지 않습니다.');
+    }
+    return '';
+  }
+
   async create(createItemDto: CreateItemDto) {
     const { materials, ...rest } = createItemDto;
 

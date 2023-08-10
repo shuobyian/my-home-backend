@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EditMarketDto } from 'src/market/dto/edit-market-dto';
 import { Market } from 'src/market/entities/market.entity';
 import { DataSource, Repository } from 'typeorm';
 
@@ -11,10 +12,16 @@ export class MarketService {
   ) {}
 
   async findAll() {
-    return await this.market.find();
+    return (await this.market.find()).sort((a, b) => a.id - b.id);
   }
 
-  async findOne(name?: string) {
-    return await this.market.find({ where: { name } });
+  async findOne(id: number) {
+    return await this.market.find({ where: { id } });
+  }
+
+  async update(editMarketDto: EditMarketDto[]) {
+    return Promise.all(
+      editMarketDto.map((_market) => this.market.save(_market)),
+    );
   }
 }

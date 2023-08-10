@@ -11,6 +11,11 @@ export class ItemController {
     return this.itemService.create(createItemDto);
   }
 
+  @Post('/login')
+  login(@Body() body: { password: string }) {
+    return this.itemService.login(body);
+  }
+
   @Get()
   findAll(@Query('page') page: number, @Query('size') size: number) {
     return this.itemService.findAllPage(page, size);
