@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { CreateItemDto } from 'src/item/dto/create-item-dto';
 import { RawItemDto, ReadItemDto } from 'src/item/dto/read-item-dto';
 import { Item } from 'src/item/entities/item.entity';
+import { Page } from 'src/result/type/Page';
 import { DataSource, Repository } from 'typeorm';
 
 @Injectable()
@@ -49,6 +50,20 @@ export class ItemService {
       itemId: item.id,
       ...this.parseItem(item),
     }));
+  }
+
+  async findAllPage(page: number, size: number): Promise<Page<ReadItemDto>> {
+    const [itemList, totalElements] = await this.item.findAndCount({
+      take: size,
+      skip: page * size,
+    });
+    return {
+      totalElements,
+      content: itemList.map((item) => ({
+        itemId: item.id,
+        ...this.parseItem(item),
+      })),
+    };
   }
 
   async findOne(id: number): Promise<ReadItemDto> {

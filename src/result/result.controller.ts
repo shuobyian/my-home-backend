@@ -17,6 +17,6 @@ export class ResultController {
     @Query('name') name?: string,
     @Query('count') count?: number,
   ) {
-    return this.resultService.findAll(page, size, name, count);
+    return this.resultService.findAllPage(page, size, name, count);
   }
 }

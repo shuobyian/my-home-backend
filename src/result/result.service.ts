@@ -115,7 +115,7 @@ export class ResultService {
   //   return await this.result.save(this.result.create({ ...rest }));
   // }
 
-  async findAll(
+  async findAllPage(
     page: number,
     size: number,
     name?: string,

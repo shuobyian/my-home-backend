@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { CreateItemDto } from 'src/item/dto/create-item-dto';
 import { ItemService } from 'src/item/item.service';
 
@@ -12,7 +12,7 @@ export class ItemController {
   }
 
   @Get()
-  findAll() {
-    return this.itemService.findAll();
+  findAll(@Query('page') page: number, @Query('size') size: number) {
+    return this.itemService.findAllPage(page, size);
   }
 }
