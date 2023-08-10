@@ -4,11 +4,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ItemService } from 'src/item/item.service';
 import { MarketService } from 'src/market/market.service';
 import { ReadResultDto } from 'src/result/dto/read-item-dto';
-// import { CreateResultDto } from 'src/result/dto/create-result-dto';
+import { CreateResultDto } from 'src/result/dto/create-result-dto';
 import { Result } from 'src/result/entities/result.entity';
 import { Material } from 'src/result/type/Material';
 import { Page } from 'src/result/type/Page';
 import { DataSource, Like, Repository } from 'typeorm';
+import { Market } from 'src/market/entities/market.entity';
+import { ReadItemDto } from 'src/item/dto/read-item-dto';
 
 @Injectable()
 export class ResultService {
@@ -28,75 +30,11 @@ export class ResultService {
     const marketList = await this.marketService.findAll();
 
     const resultList = itemList.map((item) => {
-      const basic: Material[] = [];
-      let middle: Material[] = [];
-
       const { materials, ...rest } = item;
-      for (const material of materials) {
-        if (!material.base) {
-          const included = basic.findIndex((b) => b.name === material.name);
-          if (included !== -1) {
-            basic[included].count += material.count;
-          } else {
-            basic.push(material);
-          }
-        } else {
-          middle.push(material);
-        }
-      }
 
-      while (middle.length !== 0) {
-        for (const item of itemList) {
-          if (middle.length > 0 && middle[0].name === item.name) {
-            for (const material of item.materials) {
-              if (!middle[0].base) {
-                const included = basic.findIndex(
-                  (b) => b.name === material.name,
-                );
-                if (included !== -1) {
-                  basic[included].count += middle[0].count * material.count;
-                } else {
-                  basic.push({
-                    ...material,
-                    count: middle[0].count * material.count,
-                  });
-                }
-                middle = middle.slice(1);
-              } else {
-                middle.push({
-                  ...material,
-                  count: middle[0].count * material.count,
-                });
-              }
-            }
-            middle = middle.slice(1);
-            break;
-          }
-        }
-        if (middle.length > 0 && !middle[0].base) {
-          const included = basic.findIndex((b) => b.name === middle[0].name);
-          if (included !== -1) {
-            basic[included].count += middle[0].count;
-          } else {
-            basic.push(middle[0]);
-          }
-          middle = middle.slice(1);
-        }
-      }
-      const prices: number[] = [];
-      for (const b of basic) {
-        for (const m of marketList) {
-          if (b.name === m.name) {
-            prices.push(b.count * m.price);
-          }
-        }
-      }
       return {
         ...rest,
-        basic: basic.map((b) => b.name).toString(),
-        counts: basic.map((b) => b.count).toString(),
-        prices: prices.toString(),
-        totalPrice: prices.reduce((acc, cur) => (acc += cur), 0),
+        ...this.parseResult(itemList, marketList, materials),
       };
     });
 
@@ -105,15 +43,92 @@ export class ResultService {
     );
   }
 
-  // async create(createResultDto: CreateResultDto) {
-  //   const { materials, ...rest } = createResultDto;
-  //   for (const material of materials) {
-  //     const prev = this.findOneByName(material.name);
-  //     const item = await this.itemService.findOneByName(material.name);
-  //   }
+  async create(createResultDto: CreateResultDto) {
+    const itemList = await this.itemService.findAll();
+    const marketList = await this.marketService.findAll();
 
-  //   return await this.result.save(this.result.create({ ...rest }));
-  // }
+    const { materials, ...rest } = createResultDto;
+
+    return await this.result.save(
+      this.result.create({
+        ...rest,
+        ...this.parseResult(itemList, marketList, materials),
+      }),
+    );
+  }
+
+  parseResult(
+    itemList: ReadItemDto[],
+    marketList: Market[],
+    materials: Material[],
+  ) {
+    const basic: Material[] = [];
+    let middle: Material[] = [];
+
+    for (const material of materials) {
+      if (!material.base) {
+        const included = basic.findIndex((b) => b.name === material.name);
+        if (included !== -1) {
+          basic[included].count += material.count;
+        } else {
+          basic.push(material);
+        }
+      } else {
+        middle.push(material);
+      }
+    }
+
+    while (middle.length !== 0) {
+      for (const item of itemList) {
+        if (middle.length > 0 && middle[0].name === item.name) {
+          for (const material of item.materials) {
+            if (!middle[0].base) {
+              const included = basic.findIndex((b) => b.name === material.name);
+              if (included !== -1) {
+                basic[included].count += middle[0].count * material.count;
+              } else {
+                basic.push({
+                  ...material,
+                  count: middle[0].count * material.count,
+                });
+              }
+              middle = middle.slice(1);
+            } else {
+              middle.push({
+                ...material,
+                count: middle[0].count * material.count,
+              });
+            }
+          }
+          middle = middle.slice(1);
+          break;
+        }
+      }
+      if (middle.length > 0 && !middle[0].base) {
+        const included = basic.findIndex((b) => b.name === middle[0].name);
+        if (included !== -1) {
+          basic[included].count += middle[0].count;
+        } else {
+          basic.push(middle[0]);
+        }
+        middle = middle.slice(1);
+      }
+    }
+    const prices: number[] = [];
+    for (const b of basic) {
+      for (const m of marketList) {
+        if (b.name === m.name) {
+          prices.push(b.count * m.price);
+        }
+      }
+    }
+    return {
+      basic: basic.map((b) => b.name).toString(),
+      counts: basic.map((b) => b.count).toString(),
+      prices: prices.toString(),
+      totalPrice: prices.reduce((acc, cur) => (acc += cur), 0),
+    };
+  }
 
   async findAllPage(
     page: number,
