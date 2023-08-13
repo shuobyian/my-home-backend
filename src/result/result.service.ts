@@ -141,7 +141,7 @@ export class ResultService {
       take: size,
       skip: page * size,
     });
-    const count = _count ?? 1;
+    const count = _count ? _count : 1;
 
     const itemList = await Promise.all(
       resultList.map((result) => this.itemService.findOneByName(result.name)),
