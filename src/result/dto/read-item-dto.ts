@@ -1,5 +1,5 @@
 export interface ReadResultDto {
-  resultId: number;
+  id: number;
   name: string;
   level: number;
   craftingPrice: number;
