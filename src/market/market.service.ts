@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EditMarketDto } from 'src/market/dto/edit-market-dto';
 import { Market } from 'src/market/entities/market.entity';
+import { ResultService } from 'src/result/result.service';
 import { DataSource, Repository } from 'typeorm';
 
 @Injectable()
@@ -9,6 +10,8 @@ export class MarketService {
   constructor(
     private dataSource: DataSource,
     @InjectRepository(Market) private readonly market: Repository<Market>,
+    @Inject(forwardRef(() => ResultService))
+    private resultService: ResultService,
   ) {}
 
   async findAll() {
@@ -20,8 +23,12 @@ export class MarketService {
   }
 
   async update(editMarketDto: EditMarketDto[]) {
-    return Promise.all(
+    const marketList = await Promise.all(
       editMarketDto.map((_market) => this.market.save(_market)),
     );
+
+    await this.resultService.createAll();
+
+    return marketList;
   }
 }

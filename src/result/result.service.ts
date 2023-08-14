@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ItemService } from 'src/item/item.service';
@@ -24,7 +23,8 @@ export class ResultService {
   ) {}
 
   async createAll() {
-    await this.result.save([]);
+    const _resultList = await this.result.find();
+    await Promise.all(_resultList.map((r) => this.result.delete({ id: r.id })));
 
     const itemList = await this.itemService.findAll();
     const marketList = await this.marketService.findAll();
@@ -138,6 +138,7 @@ export class ResultService {
   ): Promise<Page<ReadResultDto>> {
     const [resultList, totalElements] = await this.result.findAndCount({
       where: { name: name ? Like(`%${name}%`) : undefined },
+      order: { level: 'ASC' },
       take: size,
       skip: page * size,
     });
@@ -150,7 +151,7 @@ export class ResultService {
     return {
       totalElements,
       content: resultList.map((result) => {
-        const { id, basic, prices, counts, ...rest } = result;
+        const { basic, prices, counts, ...rest } = result;
         const nameList = basic.split(',');
         const priceList = prices.split(',');
         const countList = counts.split(',');
@@ -162,7 +163,6 @@ export class ResultService {
 
         return {
           ...rest,
-          resultId: result.id,
           item: {
             ...item,
             materials: item.materials.map((material) => ({

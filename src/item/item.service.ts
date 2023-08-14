@@ -77,20 +77,21 @@ export class ItemService {
   async findAll(): Promise<ReadItemDto[]> {
     const itemList = await this.item.find();
     return itemList.map((item) => ({
-      itemId: item.id,
+      id: item.id,
       ...this.parseItem(item),
     }));
   }
 
   async findAllPage(page: number, size: number): Promise<Page<ReadItemDto>> {
     const [itemList, totalElements] = await this.item.findAndCount({
+      order: { id: 'ASC' },
       take: size,
       skip: page * size,
     });
     return {
       totalElements,
       content: itemList.map((item) => ({
-        itemId: item.id,
+        id: item.id,
         ...this.parseItem(item),
       })),
     };
@@ -100,7 +101,7 @@ export class ItemService {
     const item = await this.item.findOne({ where: { id } });
 
     return {
-      itemId: item.id,
+      id: item.id,
       ...this.parseItem(item),
     };
   }
@@ -109,7 +110,7 @@ export class ItemService {
     const item = await this.item.findOne({ where: { name: _name } });
 
     return {
-      itemId: item.id,
+      id: item.id,
       ...this.parseItem(item),
     };
   }
