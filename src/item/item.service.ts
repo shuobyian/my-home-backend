@@ -31,7 +31,8 @@ export class ItemService {
   async create(createItemDto: CreateItemDto) {
     const { materials, ...rest } = createItemDto;
 
-    if (this.findOneByName(createItemDto.name)) {
+    const item = await this.findOneByName(createItemDto.name);
+    if (item) {
       throw new BadRequestException('중복된 아이템입니다.');
     }
 
@@ -109,14 +110,16 @@ export class ItemService {
   async findOneByName(_name?: string): Promise<ReadItemDto> {
     const item = await this.item.findOne({ where: { name: _name } });
 
-    return {
-      id: item.id,
-      ...this.parseItem(item),
-    };
+    return item
+      ? {
+          id: item.id,
+          ...this.parseItem(item),
+        }
+      : undefined;
   }
 
   parseItem(item: RawItemDto) {
-    const { name, level, craftingPrice, ...rest } = item;
+    const { name, level, craftingPrice, tool, ...rest } = item;
     const materials = [
       {
         name: rest.material1,
@@ -148,6 +151,7 @@ export class ItemService {
       name,
       level,
       craftingPrice,
+      tool,
       materials,
     };
   }
