@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Query } from '@nestjs/common';
+import { Tool } from 'src/item/type/Tool';
 import { ResultService } from 'src/result/result.service';
 
 @Controller('result')
@@ -16,7 +17,8 @@ export class ResultController {
     @Query('size') size: number,
     @Query('name') name?: string,
     @Query('count') count?: number,
+    @Query('tool') tool?: Tool,
   ) {
-    return this.resultService.findAllPage(page, size, name, count);
+    return this.resultService.findAllPage(page, size, name, count, tool);
   }
 }
