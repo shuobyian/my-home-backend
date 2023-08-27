@@ -138,7 +138,7 @@ export class ResultService {
   ): Promise<Page<ReadResultDto>> {
     const [resultList, totalElements] = await this.result.findAndCount({
       where: { name: name ? Like(`%${name}%`) : undefined },
-      order: { level: 'ASC' },
+      order: { level: 'ASC', name: 'ASC' },
       take: size,
       skip: page * size,
     });
@@ -178,6 +178,7 @@ export class ResultService {
             price: Number(priceList[index]) * count,
             count: Number(countList[index]) * count,
           })),
+          totalPrice: result.totalPrice * count,
         };
       }),
     };

@@ -1,4 +1,5 @@
 import { CreateItemDto } from 'src/item/dto/create-item-dto';
+import { Tool } from 'src/item/type/Tool';
 
 export class ReadItemDto extends CreateItemDto {
   id: number;
@@ -8,6 +9,7 @@ export class RawItemDto {
   name: string;
   level: number;
   craftingPrice: number;
+  tool: Tool;
   material1: string;
   base1: number;
   count1: number;
