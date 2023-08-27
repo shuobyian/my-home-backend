@@ -1,3 +1,4 @@
+import { Tool } from 'src/item/type/Tool';
 import {
   Column,
   CreateDateColumn,
@@ -27,6 +28,9 @@ export class Result {
 
   @Column('varchar', { unique: true, name: 'name' })
   name: string;
+
+  @Column('varchar', { name: 'tool' })
+  tool: Tool;
 
   @Column('integer', { name: 'level' })
   level: number;

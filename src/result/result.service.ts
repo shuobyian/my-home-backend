@@ -10,6 +10,7 @@ import { Page } from 'src/result/type/Page';
 import { DataSource, Like, Repository } from 'typeorm';
 import { Market } from 'src/market/entities/market.entity';
 import { ReadItemDto } from 'src/item/dto/read-item-dto';
+import { Tool } from 'src/item/type/Tool';
 
 @Injectable()
 export class ResultService {
@@ -135,9 +136,13 @@ export class ResultService {
     size: number,
     name?: string,
     _count?: number,
+    tool?: Tool,
   ): Promise<Page<ReadResultDto>> {
     const [resultList, totalElements] = await this.result.findAndCount({
-      where: { name: name ? Like(`%${name}%`) : undefined },
+      where: {
+        name: name ? Like(`%${name}%`) : undefined,
+        tool,
+      },
       order: { level: 'ASC', name: 'ASC' },
       take: size,
       skip: page * size,
