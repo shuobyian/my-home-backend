@@ -1,16 +1,16 @@
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ReadItemDto } from 'src/item/dto/read-item-dto';
 import { ItemService } from 'src/item/item.service';
+import { Tool } from 'src/item/type/Tool';
+import { Market } from 'src/market/entities/market.entity';
 import { MarketService } from 'src/market/market.service';
-import { ReadResultDto } from 'src/result/dto/read-item-dto';
 import { CreateResultDto } from 'src/result/dto/create-result-dto';
+import { ReadResultDto } from 'src/result/dto/read-item-dto';
 import { Result } from 'src/result/entities/result.entity';
 import { Material } from 'src/result/type/Material';
 import { Page } from 'src/result/type/Page';
 import { DataSource, Like, Repository } from 'typeorm';
-import { Market } from 'src/market/entities/market.entity';
-import { ReadItemDto } from 'src/item/dto/read-item-dto';
-import { Tool } from 'src/item/type/Tool';
 
 @Injectable()
 export class ResultService {
@@ -56,6 +56,25 @@ export class ResultService {
         ...this.parseResult(itemList, marketList, materials),
       }),
     );
+  }
+
+  async calculator(marketList: Market[]) {
+    const itemList = await this.itemService.findAll();
+
+    const resultList: Result[] = itemList.map((item) => {
+      const { materials, ...rest } = item;
+
+      return {
+        ...rest,
+        createdAt: '',
+        updatedAt: '',
+        ...this.parseResult(itemList, marketList, materials),
+      };
+    });
+
+    return {
+      results: this.parseResults(resultList, 1, itemList),
+    };
   }
 
   parseResult(
@@ -131,6 +150,38 @@ export class ResultService {
     };
   }
 
+  parseResults(resultList: Result[], count: number, itemList: ReadItemDto[]) {
+    return resultList.map((result) => {
+      const { basic, prices, counts, ...rest } = result;
+      const nameList = basic.split(',');
+      const priceList = prices.split(',');
+      const countList = counts.split(',');
+
+      const rates = [1, 1.039, 1.156, 1.35, 1622];
+      const rate = count < 5 ? rates[count - 1] : 1.613666 + 0.001555;
+
+      const item = itemList.find((i) => i.name === result.name);
+
+      return {
+        ...rest,
+        item: {
+          ...item,
+          materials: item.materials.map((material) => ({
+            ...material,
+            count: material.count * count,
+          })),
+        },
+        craftingPrice: Math.floor(Number(result.craftingPrice) * count * rate),
+        basic: Array.from({ length: nameList.length }, (_, index) => ({
+          name: nameList[index],
+          price: Number(priceList[index]) * count,
+          count: Number(countList[index]) * count,
+        })),
+        totalPrice: result.totalPrice * count,
+      };
+    });
+  }
+
   async findAllPage(
     page: number,
     size: number,
@@ -155,37 +206,7 @@ export class ResultService {
 
     return {
       totalElements,
-      content: resultList.map((result) => {
-        const { basic, prices, counts, ...rest } = result;
-        const nameList = basic.split(',');
-        const priceList = prices.split(',');
-        const countList = counts.split(',');
-
-        const rates = [1, 1.039, 1.156, 1.35, 1622];
-        const rate = count < 5 ? rates[count - 1] : 1.613666 + 0.001555;
-
-        const item = itemList.find((i) => i.name === result.name);
-
-        return {
-          ...rest,
-          item: {
-            ...item,
-            materials: item.materials.map((material) => ({
-              ...material,
-              count: material.count * count,
-            })),
-          },
-          craftingPrice: Math.floor(
-            Number(result.craftingPrice) * count * rate,
-          ),
-          basic: Array.from({ length: nameList.length }, (_, index) => ({
-            name: nameList[index],
-            price: Number(priceList[index]) * count,
-            count: Number(countList[index]) * count,
-          })),
-          totalPrice: result.totalPrice * count,
-        };
-      }),
+      content: this.parseResults(resultList, count, itemList),
     };
   }
 }
