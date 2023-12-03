@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { CreateItemDto } from 'src/item/dto/create-item-dto';
 import { Tool } from 'src/item/type/Tool';
 import { Market } from 'src/market/entities/market.entity';
 import { ResultService } from 'src/result/result.service';
@@ -26,5 +27,10 @@ export class ResultController {
   @Post('calculator')
   calculator(@Body('markets') markets: Market[]) {
     return this.resultService.calculator(markets);
+  }
+
+  @Post('upload-item')
+  upload(@Body('items') items: CreateItemDto[]) {
+    return this.resultService.uploadItems(items);
   }
 }

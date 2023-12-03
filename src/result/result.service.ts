@@ -1,14 +1,19 @@
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ReadItemDto } from 'src/item/dto/read-item-dto';
+import { CreateItemDto } from 'src/item/dto/create-item-dto';
 import { ItemService } from 'src/item/item.service';
 import { Tool } from 'src/item/type/Tool';
 import { Market } from 'src/market/entities/market.entity';
 import { MarketService } from 'src/market/market.service';
 import { ReadResultDto } from 'src/result/dto/read-item-dto';
 import { Result } from 'src/result/entities/result.entity';
-import { Material } from 'src/result/type/Material';
 import { Page } from 'src/result/type/Page';
+import { makeResult, parseResults } from 'src/result/util/UtilResult';
 import { DataSource, Like, Repository } from 'typeorm';
 
 @Injectable()
@@ -34,7 +39,7 @@ export class ResultService {
 
       return {
         ...rest,
-        ...this.parseResult(itemList, marketList, materials),
+        ...makeResult(itemList, marketList, materials),
       };
     });
 
@@ -53,126 +58,41 @@ export class ResultService {
         ...rest,
         createdAt: '',
         updatedAt: '',
-        ...this.parseResult(itemList, marketList, materials),
+        ...makeResult(itemList, marketList, materials),
       };
     });
 
     return {
-      results: this.parseResults(resultList, 1, itemList),
+      results: parseResults(resultList, 1, itemList),
     };
   }
 
-  parseResult(
-    itemList: ReadItemDto[],
-    marketList: Market[],
-    items: Material[],
-  ) {
-    const materialList: Material[] = [];
-    let middleMaterialList: Material[] = [];
+  async uploadItems(itemList: CreateItemDto[]) {
+    const _resultList = await this.result.find();
+    const _itemList = itemList.filter(
+      (item) => !_resultList.find(({ name }) => name === item.name),
+    );
 
-    for (const item of items) {
-      if (!item.base) {
-        const included = materialList.findIndex((b) => b.name === item.name);
-        if (included !== -1) {
-          materialList[included].count += item.count;
-        } else {
-          materialList.push(item);
-        }
-      } else {
-        middleMaterialList.push(item);
-      }
+    if (_itemList.length < 1) {
+      throw new BadRequestException('새로 추가된 아이템이 없습니다.');
     }
 
-    while (middleMaterialList.length !== 0) {
-      for (const item of itemList) {
-        if (
-          middleMaterialList.length > 0 &&
-          middleMaterialList[0].name === item.name
-        ) {
-          for (const material of item.materials) {
-            if (!middleMaterialList[0].base) {
-              const included = materialList.findIndex(
-                (b) => b.name === material.name,
-              );
-              if (included !== -1) {
-                materialList[included].count +=
-                  middleMaterialList[0].count * material.count;
-              } else {
-                materialList.push({
-                  ...material,
-                  count: middleMaterialList[0].count * material.count,
-                });
-              }
-              middleMaterialList = middleMaterialList.slice(1);
-            } else {
-              middleMaterialList.push({
-                ...material,
-                count: middleMaterialList[0].count * material.count,
-              });
-            }
-          }
-          middleMaterialList = middleMaterialList.slice(1);
-          break;
-        }
-      }
-      if (middleMaterialList.length > 0 && !middleMaterialList[0].base) {
-        const included = materialList.findIndex(
-          (b) => b.name === middleMaterialList[0].name,
-        );
-        if (included !== -1) {
-          materialList[included].count += middleMaterialList[0].count;
-        } else {
-          materialList.push(middleMaterialList[0]);
-        }
-        middleMaterialList = middleMaterialList.slice(1);
-      }
-    }
-    const prices: number[] = [];
-    for (const b of materialList) {
-      for (const m of marketList) {
-        if (b.name === m.name) {
-          prices.push(b.count * m.price);
-        }
-      }
-    }
-    return {
-      names: materialList.map((b) => b.name).toString(),
-      counts: materialList.map((b) => b.count).toString(),
-      prices: prices.toString(),
-      totalPrice: prices.reduce((acc, cur) => (acc += cur), 0),
-    };
-  }
+    const marketList = await this.marketService.findAll();
 
-  parseResults(resultList: Result[], count: number, itemList: ReadItemDto[]) {
-    return resultList.map((result) => {
-      const { names, prices, counts, ...rest } = result;
-      const nameList = names.split(',');
-      const priceList = prices.split(',');
-      const countList = counts.split(',');
-
-      const rates = [1, 1.039, 1.156, 1.35, 1622];
-      const rate = count < 5 ? rates[count - 1] : 1.613666 + 0.001555;
-
-      const item = itemList.find((i) => i.name === result.name);
+    const resultList = _itemList.map((item) => {
+      const { materials, ...rest } = item;
 
       return {
         ...rest,
-        item: {
-          ...item,
-          materials: item.materials.map((material) => ({
-            ...material,
-            count: material.count * count,
-          })),
-        },
-        craftingPrice: Math.floor(Number(result.craftingPrice) * count * rate),
-        materials: Array.from({ length: nameList.length }, (_, index) => ({
-          name: nameList[index],
-          price: Number(priceList[index]) * count,
-          count: Number(countList[index]) * count,
-        })),
-        totalPrice: result.totalPrice * count,
+        ...makeResult(itemList, marketList, materials),
       };
     });
+
+    const res = await Promise.all(
+      resultList.map((r) => this.result.save(this.result.create(r))),
+    );
+
+    return parseResults(res, 1, itemList);
   }
 
   async findAllPage(
@@ -199,7 +119,7 @@ export class ResultService {
 
     return {
       totalElements,
-      content: this.parseResults(resultList, count, itemList),
+      content: parseResults(resultList, count, itemList),
     };
   }
 }

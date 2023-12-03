@@ -67,27 +67,27 @@ export class ItemService {
     const materials = [
       {
         name: rest.name1,
-        base: rest.base1 === 1 ? true : false,
+        base: rest.base1 === 1 ? false : true,
         count: rest.count1,
       },
       rest.name2 && {
         name: rest.name2,
-        base: rest.base2 === 1 ? true : false,
+        base: rest.base2 === 1 ? false : true,
         count: rest.count2,
       },
       rest.name3 && {
         name: rest.name3,
-        base: rest.base3 === 1 ? true : false,
+        base: rest.base3 === 1 ? false : true,
         count: rest.count3,
       },
       rest.name4 && {
         name: rest.name4,
-        base: rest.base4 === 1 ? true : false,
+        base: rest.base4 === 1 ? false : true,
         count: rest.count4,
       },
       rest.name5 && {
         name: rest.name5,
-        base: rest.base5 === 1 ? true : false,
+        base: rest.base5 === 1 ? false : true,
         count: rest.count5,
       },
     ].filter(Boolean);
