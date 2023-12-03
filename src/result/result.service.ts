@@ -5,7 +5,6 @@ import { ItemService } from 'src/item/item.service';
 import { Tool } from 'src/item/type/Tool';
 import { Market } from 'src/market/entities/market.entity';
 import { MarketService } from 'src/market/market.service';
-import { CreateResultDto } from 'src/result/dto/create-result-dto';
 import { ReadResultDto } from 'src/result/dto/read-item-dto';
 import { Result } from 'src/result/entities/result.entity';
 import { Material } from 'src/result/type/Material';
@@ -44,20 +43,6 @@ export class ResultService {
     );
   }
 
-  async create(createResultDto: CreateResultDto) {
-    const itemList = await this.itemService.findAll();
-    const marketList = await this.marketService.findAll();
-
-    const { materials, ...rest } = createResultDto;
-
-    return await this.result.save(
-      this.result.create({
-        ...rest,
-        ...this.parseResult(itemList, marketList, materials),
-      }),
-    );
-  }
-
   async calculator(marketList: Market[]) {
     const itemList = await this.itemService.findAll();
 
@@ -80,62 +65,70 @@ export class ResultService {
   parseResult(
     itemList: ReadItemDto[],
     marketList: Market[],
-    materials: Material[],
+    items: Material[],
   ) {
-    const basic: Material[] = [];
-    let middle: Material[] = [];
+    const materialList: Material[] = [];
+    let middleMaterialList: Material[] = [];
 
-    for (const material of materials) {
-      if (!material.base) {
-        const included = basic.findIndex((b) => b.name === material.name);
+    for (const item of items) {
+      if (!item.base) {
+        const included = materialList.findIndex((b) => b.name === item.name);
         if (included !== -1) {
-          basic[included].count += material.count;
+          materialList[included].count += item.count;
         } else {
-          basic.push(material);
+          materialList.push(item);
         }
       } else {
-        middle.push(material);
+        middleMaterialList.push(item);
       }
     }
 
-    while (middle.length !== 0) {
+    while (middleMaterialList.length !== 0) {
       for (const item of itemList) {
-        if (middle.length > 0 && middle[0].name === item.name) {
+        if (
+          middleMaterialList.length > 0 &&
+          middleMaterialList[0].name === item.name
+        ) {
           for (const material of item.materials) {
-            if (!middle[0].base) {
-              const included = basic.findIndex((b) => b.name === material.name);
+            if (!middleMaterialList[0].base) {
+              const included = materialList.findIndex(
+                (b) => b.name === material.name,
+              );
               if (included !== -1) {
-                basic[included].count += middle[0].count * material.count;
+                materialList[included].count +=
+                  middleMaterialList[0].count * material.count;
               } else {
-                basic.push({
+                materialList.push({
                   ...material,
-                  count: middle[0].count * material.count,
+                  count: middleMaterialList[0].count * material.count,
                 });
               }
-              middle = middle.slice(1);
+              middleMaterialList = middleMaterialList.slice(1);
             } else {
-              middle.push({
+              middleMaterialList.push({
                 ...material,
-                count: middle[0].count * material.count,
+                count: middleMaterialList[0].count * material.count,
               });
             }
           }
-          middle = middle.slice(1);
+          middleMaterialList = middleMaterialList.slice(1);
           break;
         }
       }
-      if (middle.length > 0 && !middle[0].base) {
-        const included = basic.findIndex((b) => b.name === middle[0].name);
+      if (middleMaterialList.length > 0 && !middleMaterialList[0].base) {
+        const included = materialList.findIndex(
+          (b) => b.name === middleMaterialList[0].name,
+        );
         if (included !== -1) {
-          basic[included].count += middle[0].count;
+          materialList[included].count += middleMaterialList[0].count;
         } else {
-          basic.push(middle[0]);
+          materialList.push(middleMaterialList[0]);
         }
-        middle = middle.slice(1);
+        middleMaterialList = middleMaterialList.slice(1);
       }
     }
     const prices: number[] = [];
-    for (const b of basic) {
+    for (const b of materialList) {
       for (const m of marketList) {
         if (b.name === m.name) {
           prices.push(b.count * m.price);
@@ -143,8 +136,8 @@ export class ResultService {
       }
     }
     return {
-      basic: basic.map((b) => b.name).toString(),
-      counts: basic.map((b) => b.count).toString(),
+      names: materialList.map((b) => b.name).toString(),
+      counts: materialList.map((b) => b.count).toString(),
       prices: prices.toString(),
       totalPrice: prices.reduce((acc, cur) => (acc += cur), 0),
     };
@@ -152,8 +145,8 @@ export class ResultService {
 
   parseResults(resultList: Result[], count: number, itemList: ReadItemDto[]) {
     return resultList.map((result) => {
-      const { basic, prices, counts, ...rest } = result;
-      const nameList = basic.split(',');
+      const { names, prices, counts, ...rest } = result;
+      const nameList = names.split(',');
       const priceList = prices.split(',');
       const countList = counts.split(',');
 
@@ -172,7 +165,7 @@ export class ResultService {
           })),
         },
         craftingPrice: Math.floor(Number(result.craftingPrice) * count * rate),
-        basic: Array.from({ length: nameList.length }, (_, index) => ({
+        materials: Array.from({ length: nameList.length }, (_, index) => ({
           name: nameList[index],
           price: Number(priceList[index]) * count,
           count: Number(countList[index]) * count,

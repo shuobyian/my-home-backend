@@ -5,7 +5,7 @@ export class Market {
   @PrimaryGeneratedColumn({ type: 'integer', name: 'id' })
   id: number;
 
-  @Column('varchar', { unique: true, name: 'name' })
+  @Column('varchar', { unique: true, name: 'name', length: 255 })
   name: string;
 
   @Column('integer', { name: 'price' })
