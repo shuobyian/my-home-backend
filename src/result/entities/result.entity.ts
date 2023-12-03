@@ -26,10 +26,10 @@ export class Result {
   })
   updatedAt: string | null;
 
-  @Column('varchar', { unique: true, name: 'name' })
+  @Column('varchar', { unique: true, name: 'name', length: 255 })
   name: string;
 
-  @Column('varchar', { name: 'tool' })
+  @Column('varchar', { name: 'tool', length: 255 })
   tool: Tool;
 
   @Column('integer', { name: 'level' })
@@ -38,8 +38,8 @@ export class Result {
   @Column('integer', { name: 'craftingPrice' })
   craftingPrice: number;
 
-  @Column('varchar', { name: 'basic' })
-  basic: string;
+  @Column('varchar', { name: 'names' })
+  names: string;
 
   @Column('varchar', { name: 'counts' })
   counts: string;

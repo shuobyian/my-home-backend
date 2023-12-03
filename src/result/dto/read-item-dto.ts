@@ -3,7 +3,7 @@ export interface ReadResultDto {
   name: string;
   level: number;
   craftingPrice: number;
-  basic: {
+  materials: {
     name: string;
     count: number;
     price: number;
