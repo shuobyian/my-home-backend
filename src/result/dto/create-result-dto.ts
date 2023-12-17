@@ -1,3 +1,3 @@
-import { CreateItemDto } from 'src/item/dto/create-item-dto';
+import { ReadProductDto } from 'src/product/dto/read-product-dto';
 
-export interface CreateResultDto extends CreateItemDto {}
+export interface CreateResultDto extends Omit<ReadProductDto, 'id'> {}

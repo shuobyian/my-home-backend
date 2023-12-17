@@ -2,13 +2,15 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Item } from 'src/item/entities/item.entity';
-import { ItemModule } from 'src/item/item.module';
 import { Result } from 'src/result/entities/result.entity';
 import { Market } from 'src/market/entities/market.entity';
 import { ResultModule } from 'src/result/result.module';
 import { MarketModule } from 'src/market/market.module';
 import { ConfigModule } from '@nestjs/config';
+import { Product } from 'src/product/entities/product.entity';
+import { Material } from 'src/material/entities/material.entity';
+import { ProductModule } from 'src/product/product.module';
+import { MaterialModule } from 'src/material/material.module';
 
 @Module({
   imports: [
@@ -23,10 +25,11 @@ import { ConfigModule } from '@nestjs/config';
       username: process.env.POSTGRES_USER,
       password: `${process.env.POSTGRES_PASSWORD}`,
       database: process.env.POSTGRES_NAME,
-      entities: [Item, Result, Market],
+      entities: [Product, Material, Result, Market],
       synchronize: true,
     }),
-    ItemModule,
+    ProductModule,
+    MaterialModule,
     ResultModule,
     MarketModule,
   ],

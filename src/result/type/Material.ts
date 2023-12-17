@@ -1,5 +1,5 @@
 export interface Material {
   name: string;
-  base: boolean;
+  basic: boolean;
   count: number;
 }
