@@ -1,8 +1,11 @@
-import { Tool } from 'src/item/type/Tool';
+import { Product } from 'src/product/entities/product.entity';
+import { Tool } from 'src/product/type/Tool';
 import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -26,17 +29,17 @@ export class Result {
   })
   updatedAt: string | null;
 
+  @Column('integer', { name: 'product_id' })
+  product_id: number;
+
   @Column('varchar', { unique: true, name: 'name', length: 255 })
   name: string;
-
-  @Column('varchar', { name: 'tool', length: 255 })
-  tool: Tool;
 
   @Column('integer', { name: 'level' })
   level: number;
 
-  @Column('integer', { name: 'craftingPrice' })
-  craftingPrice: number;
+  @Column('varchar', { name: 'tool', length: 255 })
+  tool: Tool;
 
   @Column('varchar', { name: 'names' })
   names: string;
@@ -49,4 +52,8 @@ export class Result {
 
   @Column('integer', { name: 'totalPrice' })
   totalPrice: number;
+
+  @OneToOne(() => Product, (product) => product)
+  @JoinColumn([{ name: 'product_id', referencedColumnName: 'id' }])
+  product: Product;
 }

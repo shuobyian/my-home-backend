@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import {
   BadRequestException,
   Inject,
@@ -5,12 +6,11 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { CreateItemDto } from 'src/item/dto/create-item-dto';
-import { ItemService } from 'src/item/item.service';
-import { Tool } from 'src/item/type/Tool';
 import { Market } from 'src/market/entities/market.entity';
 import { MarketService } from 'src/market/market.service';
-import { ReadResultDto } from 'src/result/dto/read-item-dto';
+import { ProductService } from 'src/product/product.service';
+import { Tool } from 'src/product/type/Tool';
+import { ReadResultDto } from 'src/result/dto/read-result-dto';
 import { Result } from 'src/result/entities/result.entity';
 import { Page } from 'src/result/type/Page';
 import { makeResult, parseResults } from 'src/result/util/UtilResult';
@@ -21,78 +21,67 @@ export class ResultService {
   constructor(
     private dataSource: DataSource,
     @InjectRepository(Result) private readonly result: Repository<Result>,
-    @Inject(forwardRef(() => ItemService))
-    private itemService: ItemService,
+    @Inject(forwardRef(() => ProductService))
+    private productService: ProductService,
     @Inject(forwardRef(() => MarketService))
     private marketService: MarketService,
   ) {}
 
   async createAll() {
-    const _resultList = await this.result.find();
-    await Promise.all(_resultList.map((r) => this.result.delete({ id: r.id })));
+    const _results = await this.result.find();
+    const _products = await this.productService.findAll();
+    const markets = await this.marketService.findAll();
 
-    const itemList = await this.itemService.findAll();
-    const marketList = await this.marketService.findAll();
+    const products = _products.filter(
+      (product) => !_results.find((result) => result.product_id === product.id),
+    );
 
-    const resultList = itemList.map((item) => {
-      const { materials, ...rest } = item;
+    if (products.length < 1) {
+      throw new BadRequestException('추가할 결과가 없습니다.');
+    }
+
+    const results = products.map((product) => {
+      const { materials, ...rest } = product;
 
       return {
         ...rest,
-        ...makeResult(itemList, marketList, materials),
+        product_id: product.id,
+        ...makeResult(_products, markets, materials),
       };
     });
 
     return Promise.all(
-      resultList.map((r) => this.result.save(this.result.create(r))),
+      results.map((r) => this.result.save(this.result.create(r))),
     );
   }
 
-  async calculator(marketList: Market[]) {
-    const itemList = await this.itemService.findAll();
+  async calculator(markets: Market[]) {
+    const _results = await this.result.find({ relations: { product: true } });
+    const _products = await this.productService.findAll();
 
-    const resultList: Result[] = itemList.map((item) => {
-      const { materials, ...rest } = item;
+    const results: Result[] = _products.map((product) => {
+      const { materials, craftingPrice, ...rest } = product;
+
+      const result = _results.find(
+        (_result) => _result.product_id === product.id,
+      );
+
+      if (!result) {
+        throw new BadRequestException(
+          `결과 정보가 없는 물품 (${product.name}) 입니다.`,
+        );
+      }
 
       return {
+        ...result,
         ...rest,
-        createdAt: '',
-        updatedAt: '',
-        ...makeResult(itemList, marketList, materials),
+        ...makeResult(_products, markets, materials),
       };
     });
 
     return {
-      results: parseResults(resultList, 1, itemList),
+      results: parseResults(results, 1, _products),
     };
-  }
-
-  async uploadItems(itemList: CreateItemDto[]) {
-    const _resultList = await this.result.find();
-    const _itemList = itemList.filter(
-      (item) => !_resultList.find(({ name }) => name === item.name),
-    );
-
-    if (_itemList.length < 1) {
-      throw new BadRequestException('새로 추가된 아이템이 없습니다.');
-    }
-
-    const marketList = await this.marketService.findAll();
-
-    const resultList = _itemList.map((item) => {
-      const { materials, ...rest } = item;
-
-      return {
-        ...rest,
-        ...makeResult(itemList, marketList, materials),
-      };
-    });
-
-    const res = await Promise.all(
-      resultList.map((r) => this.result.save(this.result.create(r))),
-    );
-
-    return parseResults(res, 1, itemList);
   }
 
   async findAllPage(
@@ -102,24 +91,25 @@ export class ResultService {
     _count?: number,
     tool?: Tool,
   ): Promise<Page<ReadResultDto>> {
-    const [resultList, totalElements] = await this.result.findAndCount({
+    const [results, totalElements] = await this.result.findAndCount({
       where: {
         name: name ? Like(`%${name}%`) : undefined,
         tool,
       },
+      relations: { product: true },
       order: { level: 'ASC', name: 'ASC' },
       take: size,
       skip: page * size,
     });
     const count = _count ? _count : 1;
 
-    const itemList = await Promise.all(
-      resultList.map((result) => this.itemService.findOneByName(result.name)),
+    const products = await Promise.all(
+      results.map((result) => this.productService.findOne(result.product_id)),
     );
 
     return {
       totalElements,
-      content: parseResults(resultList, count, itemList),
+      content: parseResults(results, count, products),
     };
   }
 }
