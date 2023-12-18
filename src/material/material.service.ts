@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ReadMaterialDto } from 'src/material/dto/read-material-dto';
 import { Material } from 'src/material/entities/material.entity';
-import { Product } from 'src/product/entities/product.entity';
+import { UpdateProductDto } from 'src/product/dto/update-product-dto';
 import { Item } from 'src/product/type/Item';
 import { DataSource, Repository } from 'typeorm';
 
@@ -18,7 +19,7 @@ export class MaterialService {
     );
   }
 
-  async createItem(item: Item, products: Product[]) {
+  async createItem(item: Item, products: UpdateProductDto[]) {
     const findProduct = products.find((product) => product.name === item.name);
 
     return Promise.all(
@@ -26,9 +27,17 @@ export class MaterialService {
     );
   }
 
-  async createAll(items: Item[], products: Product[]) {
+  async createAll(items: Item[], products: UpdateProductDto[]) {
     return (
       await Promise.all(items.map((item) => this.createItem(item, products)))
     ).flat();
+  }
+
+  delete(product_id: number) {
+    return this.material.delete({ product_id });
+  }
+
+  update(material: ReadMaterialDto) {
+    return this.material.save(material);
   }
 }

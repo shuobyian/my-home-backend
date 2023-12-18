@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { MaterialService } from 'src/material/material.service';
 import { ReadProductDto } from 'src/product/dto/read-product-dto';
+import { UpdateProductDto } from 'src/product/dto/update-product-dto';
 import { Product } from 'src/product/entities/product.entity';
 import { DataSource, Repository } from 'typeorm';
 
@@ -62,14 +63,62 @@ export class ProductService {
     return nextProducts;
   }
 
-  async findOne(product_id: number): Promise<ReadProductDto> {
+  async create({ materials, ...product }: ReadProductDto) {
+    const prevProduct = await this.product.find({ where: { id: product.id } });
+
+    if (prevProduct) {
+      throw new BadRequestException('이미 추가된 물품입니다.');
+    }
+
+    const saveProduct = await this.product.save(this.product.create(product));
+
+    await Promise.all(
+      materials.map((material) =>
+        this.materialService.create(material, product.id),
+      ),
+    );
+
+    return saveProduct;
+  }
+
+  async update({ materials, ...product }: UpdateProductDto) {
+    await this.materialService.delete(product.id);
+
+    await Promise.all(
+      materials.map((material) =>
+        this.materialService.create(material, product.id),
+      ),
+    );
+
+    return this.product.save(product);
+  }
+
+  delete(ids: number[]) {
+    return Promise.all(ids.map((id) => this.product.delete({ id })));
+  }
+
+  findOne(product_id: number): Promise<ReadProductDto> {
     return this.product.findOne({
       where: { id: product_id },
       relations: { materials: true },
     });
   }
 
-  async findAll(): Promise<ReadProductDto[]> {
+  findAll(): Promise<ReadProductDto[]> {
     return this.product.find({ relations: { materials: true } });
+  }
+
+  async findAllPage(page: number, size: number) {
+    const [products, totalElements] = await this.product.findAndCount({
+      relations: { materials: true },
+      order: { id: 'ASC' },
+      take: size,
+      skip: page * size,
+    });
+
+    return {
+      totalElements,
+      content: products,
+    };
   }
 }
