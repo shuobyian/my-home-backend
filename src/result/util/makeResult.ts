@@ -1,28 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { BadRequestException } from '@nestjs/common';
 import { Market } from 'src/market/entities/market.entity';
 import { ReadProductDto } from 'src/product/dto/read-product-dto';
-import { Result } from 'src/result/entities/result.entity';
 import { Material } from 'src/result/type/Material';
-
-export function makeBasic({
-  material,
-  materials,
-  count = 1,
-}: {
-  material: Material;
-  materials: Material[];
-  count?: number;
-}) {
-  const newMaterial = { ...material, count: count * material.count };
-
-  const mIndex = materials.findIndex((b) => b.name === material.name);
-  if (mIndex !== -1) {
-    materials[mIndex].count += count * material.count;
-  } else {
-    materials.push(newMaterial);
-  }
-}
+import { makeBasic } from 'src/result/util/makeBasic';
 
 export function makeResult(
   products: ReadProductDto[],
@@ -85,48 +65,4 @@ export function makeResult(
     prices: prices.toString(),
     totalPrice: prices.reduce((acc, cur) => (acc += cur), 0),
   };
-}
-
-export function parseResults(
-  results: Result[],
-  count: number,
-  products: ReadProductDto[],
-) {
-  return results.map((result) => {
-    const { names, prices, counts, product_id, ...rest } = result;
-    const nameList = names.split(',');
-    const priceList = prices.split(',');
-    const countList = counts.split(',');
-
-    const rates = [1, 1.039, 1.156, 1.35, 1622];
-    const rate = count < 5 ? rates[count - 1] : 1.613666 + 0.001555;
-
-    const { materials, ...product } = products.find(
-      (i) => i.name === result.product.name,
-    );
-
-    return {
-      ...rest,
-      name: product.name,
-      level: product.level,
-      tool: product.tool,
-      product: {
-        ...product,
-        materials: materials.map((material) => ({
-          name: material.name,
-          basic: material.basic,
-          count: material.count * count,
-        })),
-      },
-      craftingPrice: Math.floor(
-        Number(result.product.craftingPrice) * count * rate,
-      ),
-      materials: Array.from({ length: nameList.length }, (_, index) => ({
-        name: nameList[index],
-        price: Number(priceList[index]) * count,
-        count: Number(countList[index]) * count,
-      })),
-      totalPrice: result.totalPrice * count,
-    };
-  });
 }

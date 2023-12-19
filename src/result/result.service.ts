@@ -13,7 +13,8 @@ import { Tool } from 'src/product/type/Tool';
 import { ReadResultDto } from 'src/result/dto/read-result-dto';
 import { Result } from 'src/result/entities/result.entity';
 import { Page } from 'src/result/type/Page';
-import { makeResult, parseResults } from 'src/result/util/UtilResult';
+import { makeResult } from 'src/result/util/makeResult';
+import { parseResults } from 'src/result/util/parseResults';
 import { DataSource, Like, Repository } from 'typeorm';
 
 @Injectable()
@@ -28,12 +29,13 @@ export class ResultService {
   ) {}
 
   async createAll() {
-    const _results = await this.result.find();
-    const _products = await this.productService.findAll();
-    const markets = await this.marketService.findAll();
+    const dbResults = await this.result.find();
+    const dbProducts = await this.productService.findAll();
+    const dbMarkets = await this.marketService.findAll();
 
-    const products = _products.filter(
-      (product) => !_results.find((result) => result.product_id === product.id),
+    const products = dbProducts.filter(
+      (product) =>
+        !dbResults.find((result) => result.product_id === product.id),
     );
 
     if (products.length < 1) {
@@ -46,7 +48,7 @@ export class ResultService {
       return {
         ...rest,
         product_id: product.id,
-        ...makeResult(_products, markets, materials),
+        ...makeResult(dbProducts, dbMarkets, materials),
       };
     });
 
@@ -56,13 +58,16 @@ export class ResultService {
   }
 
   async calculator(markets: Market[]) {
-    const _results = await this.result.find({ relations: { product: true } });
-    const _products = await this.productService.findAll();
+    const dbResults = await this.result.find({
+      relations: { product: { materials: true } },
+      order: { product: { level: 'ASC', name: 'ASC' } },
+    });
+    const dbProducts = await this.productService.findAll();
 
-    const results: Result[] = _products.map((product) => {
+    const results: Result[] = dbProducts.map((product) => {
       const { materials, craftingPrice, ...rest } = product;
 
-      const result = _results.find(
+      const result = dbResults.find(
         (_result) => _result.product_id === product.id,
       );
 
@@ -75,12 +80,12 @@ export class ResultService {
       return {
         ...result,
         ...rest,
-        ...makeResult(_products, markets, materials),
+        ...makeResult(dbProducts, markets, materials),
       };
     });
 
     return {
-      results: parseResults(results, 1, _products),
+      results: parseResults(results, 1),
     };
   }
 
@@ -88,25 +93,20 @@ export class ResultService {
     page: number,
     size: number,
     name?: string,
-    _count?: number,
+    count?: number,
     tool?: Tool,
   ): Promise<Page<ReadResultDto>> {
     const [results, totalElements] = await this.result.findAndCount({
-      relations: { product: true },
+      relations: { product: { materials: true } },
       where: { product: { name: name ? Like(`%${name}%`) : undefined, tool } },
       order: { product: { level: 'ASC', name: 'ASC' } },
       take: size,
       skip: page * size,
     });
-    const count = _count ? _count : 1;
-
-    const products = await Promise.all(
-      results.map((result) => this.productService.findOne(result.product_id)),
-    );
 
     return {
       totalElements,
-      content: parseResults(results, count, products),
+      content: parseResults(results, count ?? 1),
     };
   }
 }

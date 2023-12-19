@@ -28,11 +28,11 @@ export class ProductService {
   }
 
   async createAll(products: ReadProductDto[]) {
-    const prevProducts = await this.product.find();
+    const dbProducts = await this.product.find();
 
     const nextProducts = products
       .map((item) =>
-        prevProducts.find((prev) => prev.name === item.name)
+        dbProducts.find((prev) => prev.name === item.name)
           ? undefined
           : {
               name: item.name,
