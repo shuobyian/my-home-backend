@@ -102,11 +102,14 @@ export function parseResults(
     const rate = count < 5 ? rates[count - 1] : 1.613666 + 0.001555;
 
     const { materials, ...product } = products.find(
-      (i) => i.name === result.name,
+      (i) => i.name === result.product.name,
     );
 
     return {
       ...rest,
+      name: product.name,
+      level: product.level,
+      tool: product.tool,
       product: {
         ...product,
         materials: materials.map((material) => ({

@@ -92,12 +92,9 @@ export class ResultService {
     tool?: Tool,
   ): Promise<Page<ReadResultDto>> {
     const [results, totalElements] = await this.result.findAndCount({
-      where: {
-        name: name ? Like(`%${name}%`) : undefined,
-        tool,
-      },
       relations: { product: true },
-      order: { level: 'ASC', name: 'ASC' },
+      where: { product: { name: name ? Like(`%${name}%`) : undefined, tool } },
+      order: { product: { level: 'ASC', name: 'ASC' } },
       take: size,
       skip: page * size,
     });

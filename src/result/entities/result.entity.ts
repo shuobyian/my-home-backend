@@ -1,5 +1,4 @@
 import { Product } from 'src/product/entities/product.entity';
-import { Tool } from 'src/product/type/Tool';
 import {
   Column,
   CreateDateColumn,
@@ -31,15 +30,6 @@ export class Result {
 
   @Column('integer', { name: 'product_id' })
   product_id: number;
-
-  @Column('varchar', { unique: true, name: 'name', length: 255 })
-  name: string;
-
-  @Column('integer', { name: 'level' })
-  level: number;
-
-  @Column('varchar', { name: 'tool', length: 255 })
-  tool: Tool;
 
   @Column('varchar', { name: 'names' })
   names: string;
