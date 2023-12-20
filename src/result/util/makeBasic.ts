@@ -2,19 +2,19 @@ import { Material } from 'src/result/type/Material';
 
 export function makeBasic({
   material,
-  materials,
+  endMaterials,
   count = 1,
 }: {
   material: Material;
-  materials: Material[];
+  endMaterials: Material[];
   count?: number;
 }) {
   const newMaterial = { ...material, count: count * material.count };
 
-  const mIndex = materials.findIndex((b) => b.name === material.name);
+  const mIndex = endMaterials.findIndex((b) => b.name === material.name);
   if (mIndex !== -1) {
-    materials[mIndex].count += count * material.count;
+    endMaterials[mIndex].count += count * material.count;
   } else {
-    materials.push(newMaterial);
+    endMaterials.push(newMaterial);
   }
 }
