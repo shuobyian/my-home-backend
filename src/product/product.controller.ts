@@ -25,7 +25,7 @@ export class ProductController {
     return this.productService.findAllPage(page, size);
   }
 
-  @Post('all')
+  @Post('/all')
   createAll(@Body('products') products: ReadProductDto[]) {
     return this.productService.createAll(products);
   }

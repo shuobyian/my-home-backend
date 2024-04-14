@@ -104,6 +104,13 @@ export class ProductService {
     });
   }
 
+  findOneName(name: string): Promise<ReadProductDto> {
+    return this.product.findOne({
+      where: { name },
+      relations: { materials: true },
+    });
+  }
+
   findAll(): Promise<ReadProductDto[]> {
     return this.product.find({ relations: { materials: true } });
   }

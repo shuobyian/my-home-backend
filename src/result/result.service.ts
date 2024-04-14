@@ -89,6 +89,14 @@ export class ResultService {
     };
   }
 
+  async find(name: string) {
+    const product = await this.productService.findOneName(name);
+    return this.result.findOne({
+      where: { product_id: product.id },
+      relations: { product: { materials: true } },
+    });
+  }
+
   async findAllPage(
     page: number,
     size: number,

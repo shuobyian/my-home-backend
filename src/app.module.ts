@@ -11,6 +11,8 @@ import { Product } from 'src/product/entities/product.entity';
 import { Material } from 'src/material/entities/material.entity';
 import { ProductModule } from 'src/product/product.module';
 import { MaterialModule } from 'src/material/material.module';
+import { Experience } from 'src/experience/entities/experience.entity';
+import { ExperienceModule } from 'src/experience/experience.module';
 
 @Module({
   imports: [
@@ -25,13 +27,14 @@ import { MaterialModule } from 'src/material/material.module';
       username: process.env.POSTGRES_USER,
       password: `${process.env.POSTGRES_PASSWORD}`,
       database: process.env.POSTGRES_NAME,
-      entities: [Product, Material, Result, Market],
+      entities: [Product, Material, Result, Market, Experience],
       synchronize: true,
     }),
     ProductModule,
     MaterialModule,
     ResultModule,
     MarketModule,
+    ExperienceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
