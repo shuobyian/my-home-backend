@@ -1,4 +1,9 @@
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ReadExperienceDto } from 'src/experience/dto/read-experience-dto';
 import { ReadWalnutDto } from 'src/experience/dto/read-walnut-dto';
@@ -28,6 +33,13 @@ export class ExperienceService {
     _productionPercent?: number,
   ): Promise<ReadWalnutDto> {
     const presentLevel = Number(_presentLevel);
+
+    if (presentLevel < 55) {
+      throw new BadRequestException(
+        '호두나무는 55렙 이상부터 생산 가능합니다. 레벨업하고 오세요.',
+      );
+    }
+
     const objectiveLevel = _objectiveLevel ?? presentLevel + 1;
     const presentExperience = _presentExperience
       ? Number(_presentExperience)
@@ -46,6 +58,11 @@ export class ExperienceService {
       const experience = await this.experience.findOne({
         where: { level: presentLevel },
       });
+      if (experience.amount <= presentExperience) {
+        throw new BadRequestException(
+          '입력한 경험치가 현재 레벨 경험치보다 많습니다. 다시 설정해 주세요.',
+        );
+      }
       totalExperience += experience.amount;
     } else {
       for (const level of levelArr) {
@@ -63,12 +80,13 @@ export class ExperienceService {
     );
 
     const remindExperience = totalExperience - presentExperience;
+
     const remindCount = parseInt(
       String(remindExperience / finalWalnutExperience),
       10,
     );
 
-    const item = await this.resultService.find('광산앰플-중급 가속');
+    const item = await this.resultService.find('식물앰플-중급 가속');
 
     return {
       remindExperience,
