@@ -40,6 +40,10 @@ export class ExperienceService {
       );
     }
 
+    if (_objectiveLevel > 112) {
+      throw new BadRequestException('Lv.112이 만렙입니다.');
+    }
+
     const objectiveLevel = _objectiveLevel ?? presentLevel + 1;
     const presentExperience = _presentExperience
       ? Number(_presentExperience)
@@ -49,7 +53,7 @@ export class ExperienceService {
       : 19;
 
     const levelArr = Array.from(
-      { length: objectiveLevel - presentLevel + 1 },
+      { length: objectiveLevel - 1 - presentLevel + 1 },
       (_, index) => presentLevel + index,
     );
 
