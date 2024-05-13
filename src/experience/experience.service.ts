@@ -50,7 +50,7 @@ export class ExperienceService {
       : 0;
     const productionPercent = _productionPercent
       ? Number(_productionPercent)
-      : 19;
+      : 60;
 
     const levelArr = Array.from(
       { length: objectiveLevel - 1 - presentLevel + 1 },
