@@ -23,7 +23,7 @@ export class ExperienceService {
   ) {}
 
   findAll(): Promise<ReadExperienceDto[]> {
-    return this.experience.find();
+    return this.experience.find({ order: { level: 'ASC' } });
   }
 
   async walnut(
