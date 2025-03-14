@@ -1,4 +1,5 @@
 import { Material } from 'src/material/entities/material.entity';
+import { Category } from 'src/product/type/Category';
 import { Tool } from 'src/product/type/Tool';
 import {
   Column,
@@ -24,6 +25,9 @@ export class Product {
 
   @Column('varchar', { name: 'tool', length: 255 })
   tool: Tool;
+
+  @Column('varchar', { name: 'category', length: 255 })
+  category: Category;
 
   @OneToMany(() => Material, (material) => material.product)
   @JoinColumn([{ name: 'product_id', referencedColumnName: 'id' }])

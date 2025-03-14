@@ -39,6 +39,7 @@ export class ProductService {
               level: item.level,
               craftingPrice: item.craftingPrice,
               tool: item.tool,
+              category: item.category,
             },
       )
       .filter(Boolean);
@@ -64,7 +65,9 @@ export class ProductService {
   }
 
   async create({ materials, ...product }: ReadProductDto) {
-    const prevProduct = await this.product.find({ where: { id: product.id } });
+    const prevProduct = await this.product.findOne({
+      where: { name: product.name },
+    });
 
     if (prevProduct) {
       throw new BadRequestException('이미 추가된 물품입니다.');
@@ -74,7 +77,7 @@ export class ProductService {
 
     await Promise.all(
       materials.map((material) =>
-        this.materialService.create(material, product.id),
+        this.materialService.create(material, saveProduct.id),
       ),
     );
 

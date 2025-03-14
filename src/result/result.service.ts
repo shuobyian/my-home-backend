@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Market } from 'src/market/entities/market.entity';
 import { MarketService } from 'src/market/market.service';
 import { ProductService } from 'src/product/product.service';
+import { Category } from 'src/product/type/Category';
 import { Tool } from 'src/product/type/Tool';
 import { ReadResultDto } from 'src/result/dto/read-result-dto';
 import { Result } from 'src/result/entities/result.entity';
@@ -103,10 +104,13 @@ export class ResultService {
     name?: string,
     count?: number,
     tool?: Tool,
+    category?: Category,
   ): Promise<Page<ReadResultDto>> {
     const [results, totalElements] = await this.result.findAndCount({
       relations: { product: { materials: true } },
-      where: { product: { name: name ? Like(`%${name}%`) : undefined, tool } },
+      where: {
+        product: { name: name ? Like(`%${name}%`) : undefined, tool, category },
+      },
       order: { product: { level: 'ASC', name: 'ASC' } },
       take: size,
       skip: page * size,

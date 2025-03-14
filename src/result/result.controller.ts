@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { Market } from 'src/market/entities/market.entity';
+import { Category } from 'src/product/type/Category';
 import { Tool } from 'src/product/type/Tool';
 import { ResultService } from 'src/result/result.service';
 
@@ -19,8 +20,16 @@ export class ResultController {
     @Query('name') name?: string,
     @Query('count') count?: number,
     @Query('tool') tool?: Tool,
+    @Query('category') category?: Category,
   ) {
-    return this.resultService.findAllPage(page, size, name, count, tool);
+    return this.resultService.findAllPage(
+      page,
+      size,
+      name,
+      count,
+      tool,
+      category,
+    );
   }
 
   @Post('calculator')

@@ -1,3 +1,4 @@
+import { Category } from 'src/product/type/Category';
 import { Tool } from 'src/product/type/Tool';
 
 export class CreateProductDto {
@@ -5,4 +6,5 @@ export class CreateProductDto {
   level: number;
   tool: Tool;
   craftingPrice: number;
+  category: Category;
 }
