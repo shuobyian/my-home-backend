@@ -16,6 +16,7 @@ import { Result } from 'src/result/entities/result.entity';
 import { Page } from 'src/result/type/Page';
 import { makeResult } from 'src/result/util/makeResult';
 import { parseResults } from 'src/result/util/parseResults';
+import { parseUpdateResult } from 'src/result/util/revertResults';
 import { DataSource, Like, Repository } from 'typeorm';
 
 @Injectable()
@@ -88,6 +89,18 @@ export class ResultService {
     return {
       results: parseResults(results, 1),
     };
+  }
+
+  async updateAll(markets: Market[]) {
+    const { results } = await this.calculator(markets);
+
+    const resultList = await Promise.all(
+      results.map((_result) =>
+        this.result.update(_result.id, parseUpdateResult(_result)),
+      ),
+    );
+
+    return resultList;
   }
 
   async find(name: string) {

@@ -27,7 +27,7 @@ export class MarketService {
       editMarketDto.map((_market) => this.market.save(_market)),
     );
 
-    await this.resultService.createAll();
+    await this.resultService.updateAll(marketList);
 
     return marketList;
   }
