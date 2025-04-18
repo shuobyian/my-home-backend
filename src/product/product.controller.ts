@@ -21,8 +21,12 @@ export class ProductController {
   }
 
   @Get()
-  findAll(@Query('page') page: number, @Query('size') size: number) {
-    return this.productService.findAllPage(page, size);
+  findAll(
+    @Query('page') page: number,
+    @Query('size') size: number,
+    @Query('name') name: string,
+  ) {
+    return this.productService.findAllPage(page, size, name);
   }
 
   @Post('/all')

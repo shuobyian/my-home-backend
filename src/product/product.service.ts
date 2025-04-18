@@ -9,7 +9,7 @@ import { MaterialService } from 'src/material/material.service';
 import { ReadProductDto } from 'src/product/dto/read-product-dto';
 import { UpdateProductDto } from 'src/product/dto/update-product-dto';
 import { Product } from 'src/product/entities/product.entity';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Like, Repository } from 'typeorm';
 
 @Injectable()
 export class ProductService {
@@ -118,12 +118,13 @@ export class ProductService {
     return this.product.find({ relations: { materials: true } });
   }
 
-  async findAllPage(page: number, size: number) {
+  async findAllPage(page: number, size: number, name: string) {
     const [products, totalElements] = await this.product.findAndCount({
       relations: { materials: true },
       order: { id: 'ASC' },
       take: size,
       skip: page * size,
+      where: { name: name ? Like(`%${name}%`) : undefined },
     });
 
     return {
