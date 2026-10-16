@@ -45,6 +45,14 @@ def query_int(request, name, *, default=None, min_value=None, max_value=None, re
     return int(value)
 
 
+def query_choice(request, name, choices):
+    """TextChoices 값 중 하나인지 확인한다."""
+    value = query_str(request, name)
+    if value is not None and value not in choices.values:
+        raise BadRequest(f"{name} 값이 올바르지 않습니다. ({', '.join(choices.values)})")
+    return value
+
+
 def query_page(request):
     """page/size 쿼리를 읽는다. size가 없으면 전체를, page가 없으면 첫 페이지를 조회한다.
 

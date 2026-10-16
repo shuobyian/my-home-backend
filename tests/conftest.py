@@ -3,23 +3,12 @@ from rest_framework.test import APIClient
 
 from apps.experiences.models import Experience
 from apps.markets.models import Market
-from apps.products.models import Material, Product
+from tests.factories import make_product
 
 
 @pytest.fixture
 def client():
     return APIClient()
-
-
-def make_product(name, materials, *, level=1, crafting_price=100, tool="WOOD", category="NORMAL"):
-    product = Product.objects.create(
-        name=name, level=level, crafting_price=crafting_price, tool=tool, category=category
-    )
-    Material.objects.bulk_create(
-        Material(product=product, name=material_name, basic=is_basic, count=count)
-        for material_name, is_basic, count in materials
-    )
-    return product
 
 
 @pytest.fixture
@@ -35,3 +24,10 @@ def catalog(db):
 @pytest.fixture
 def experiences(db):
     Experience.objects.bulk_create(Experience(level=level, amount=100000 + level * 1000) for level in range(55, 113))
+
+
+@pytest.fixture
+def ample(client, db):
+    Market.objects.create(name="호두", price=100)
+    make_product("식물앰플-중급 가속", [("호두", True, 2)], crafting_price=1000)
+    client.post("/result")
