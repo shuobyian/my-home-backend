@@ -278,3 +278,43 @@ def test_recalculate_command_create_missing_with_nothing_missing(catalog):
     call_command("recalculate_results", "--create-missing", stdout=out, no_color=True)
 
     assert out.getvalue() == "결과 3건을 재계산하고 0건을 새로 만들었습니다.\n"
+
+
+def test_paginate_pages(client, catalog):
+    client.post("/result")
+
+    second = client.get("/result", {"page": 1, "size": 2}).json()
+    assert [result["name"] for result in second["content"]] == ["식탁"]
+    assert second["totalElements"] == 3
+
+    assert client.get("/result", {"page": 5, "size": 2}).json() == {"totalElements": 3, "content": []}
+
+
+def test_query_choice_messages(client, catalog):
+    client.post("/result")
+    tool_message = (
+        "tool 값이 올바르지 않습니다. "
+        "(WOOD, FIRE_PIT, SEWING_MACHINE, LEATHER, BRAZIER, POTTERY_WHEEL, ALCHEMY_KETTLE, MIMI)"
+    )
+
+    assert client.get("/result", {"tool": "HAMMER"}).json() == {
+        "statusCode": 400,
+        "message": tool_message,
+        "error": "Bad Request",
+    }
+    assert client.get("/result", {"category": "X"}).json()["message"] == (
+        "category 값이 올바르지 않습니다. (NORMAL, EVENT)"
+    )
+    # tool을 category보다 먼저 검사한다
+    assert client.get("/result", {"tool": "HAMMER", "category": "XXX"}).json()["message"] == tool_message
+
+    empty = client.get("/result", {"tool": ""})
+    assert empty.status_code == 200
+    assert len(empty.json()["content"]) == 3  # 빈 값은 필터 없음
+
+
+def test_result_name_search_is_literal(client, catalog):
+    # catalog에는 %나 _가 들어간 이름이 없다는 전제다
+    client.post("/result")
+
+    assert client.get("/result", {"name": "%"}).json()["content"] == []

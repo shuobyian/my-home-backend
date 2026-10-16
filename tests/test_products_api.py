@@ -273,6 +273,36 @@ def test_unknown_route_uses_nest_error_format(client, settings):
     assert response.json() == {"statusCode": 404, "message": "Cannot GET /nothing", "error": "Not Found"}
 
 
+def test_product_name_search_is_literal(client, catalog):
+    # catalog에는 %나 _가 들어간 이름이 없다는 전제다
+    assert client.get("/product", {"name": "_"}).json()["content"] == []
+
+
+# djangorestframework==3.16.1 한국어 번역에 묶인 문구다.
+# 버전을 올릴 때 깨지면 회귀로 보고, 테스트를 고쳐 맞추지 않는다.
+def test_method_not_allowed(client, db):
+    response = client.patch("/product", {}, format="json")
+
+    assert response.status_code == 405
+    assert response.json()["message"] == '메서드 "PATCH"는 허용되지 않습니다.'
+    assert response.json()["error"] == "Method Not Allowed"
+
+
+def test_form_body_is_unsupported(client, db):
+    response = client.post("/product", "name=a", content_type="application/x-www-form-urlencoded")
+
+    assert response.status_code == 415
+    # message에는 요청한 미디어 타입이 들어가므로 비교하지 않는다
+    assert response.json()["error"] == "Unsupported Media Type"
+
+
+def test_malformed_json(client, db):
+    response = client.generic("POST", "/product", "{bad", content_type="application/json")
+
+    assert response.status_code == 400
+    assert response.json()["message"].startswith("JSON parse error - ")
+
+
 def test_health(client):
     response = client.get("/")
     assert response.status_code == 200
