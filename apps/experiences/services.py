@@ -1,7 +1,8 @@
+from dataclasses import dataclass
+
 from apps.common.exceptions import BadRequest
 from apps.experiences.models import Experience
 from apps.results.models import Result
-from apps.results.presenters import present_result
 
 WALNUT_MIN_LEVEL = 55
 MAX_LEVEL = 112
@@ -9,12 +10,19 @@ WALNUT_EXPERIENCE = 65340
 AMPLE_PRODUCT_NAME = "식물앰플-중급 가속"
 
 
+@dataclass(frozen=True, slots=True)
+class WalnutPlan:
+    remind_experience: int
+    remind_count: int
+    ample: Result
+
+
 def list_experiences():
     return Experience.objects.order_by("level")
 
 
 def calculate_walnut(present_level, present_experience, objective_level, production_percent):
-    """목표 레벨까지 필요한 호두나무 수확 횟수와, 그만큼 필요한 식물앰플 비용을 계산한다.
+    """목표 레벨까지 필요한 호두나무 수확 횟수와, 그만큼 필요한 식물앰플 결과를 구한다.
 
     목표 레벨에 도달하려면 현재 레벨부터 (목표 레벨 - 1)까지의 경험치를 채워야 한다.
     """
@@ -44,8 +52,4 @@ def calculate_walnut(present_level, present_experience, objective_level, product
     if ample is None:
         raise BadRequest(f"{AMPLE_PRODUCT_NAME} 결과 정보가 없습니다.")
 
-    return {
-        "remindExperience": remind_experience,
-        "remindCount": remind_count,
-        "ample": {"result": present_result(ample, count=remind_count)},
-    }
+    return WalnutPlan(remind_experience, remind_count, ample)

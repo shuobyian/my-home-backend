@@ -34,7 +34,10 @@ class ProductView(APIView):
     def delete(self, request):
         serializer = ProductIdsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        return Response(services.delete_products(serializer.validated_data["ids"]))
+        ids = serializer.validated_data["ids"]
+        deleted = services.delete_products(ids)
+        # 기존 TypeORM DeleteResult 모양({raw, affected})을 요청한 id마다 (순서·중복 그대로) 돌려준다.
+        return Response([{"raw": [], "affected": 1 if product_id in deleted else 0} for product_id in ids])
 
 
 class ProductBulkCreateView(APIView):

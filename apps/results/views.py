@@ -36,4 +36,5 @@ class CalculatorView(APIView):
         serializer = CalculatorInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         prices = {market["name"]: market["price"] for market in serializer.validated_data["markets"]}
-        return Response({"results": services.preview_results(prices)}, status=status.HTTP_201_CREATED)
+        results = [present_result(result, sheet) for result, sheet in services.preview_results(prices)]
+        return Response({"results": results}, status=status.HTTP_201_CREATED)

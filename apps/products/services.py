@@ -77,7 +77,7 @@ def update_product(data):
 
 @transaction.atomic
 def delete_products(ids):
-    """기존 TypeORM DeleteResult 모양({raw, affected})을 id마다 돌려준다."""
+    """ids 중 찾아서 삭제한 물품 id 집합을 돌려준다."""
     products = dict(Product.objects.select_for_update().filter(pk__in=ids).values_list("pk", "name"))
     references = list(
         Material.objects.filter(basic=False, name__in=products.values())
@@ -93,7 +93,7 @@ def delete_products(ids):
 
     # 재료(material)와 결과(result)는 CASCADE로 함께 지워진다.
     Product.objects.filter(pk__in=products).delete()
-    return [{"raw": [], "affected": 1 if product_id in products else 0} for product_id in ids]
+    return set(products)
 
 
 def _row_name(row):

@@ -9,7 +9,6 @@ from apps.products.models import Product
 from apps.products.recipes import load_recipes
 from apps.results.calculator import CraftingCalculator, RecipeError
 from apps.results.models import Result
-from apps.results.presenters import present_result
 
 
 def build_calculator(prices=None):
@@ -74,14 +73,14 @@ def create_missing_results():
 
 
 def preview_results(prices):
-    """입력한 시세로 전체 결과를 다시 계산해 보여준다 (저장하지 않음)."""
+    """입력한 시세로 전체 결과를 다시 계산한다 (저장하지 않음). (결과, CostSheet) 목록을 응답 순서대로 돌려준다."""
     missing = Product.objects.filter(result__isnull=True).order_by("id").first()
     if missing is not None:
         raise BadRequest(f"결과 정보가 없는 물품 ({missing.name}) 입니다.")
 
     calculator = build_calculator(prices)
     return [
-        present_result(result, calculate(calculator, result.product.name))
+        (result, calculate(calculator, result.product.name))
         for result in Result.objects.with_product().in_display_order()
     ]
 
