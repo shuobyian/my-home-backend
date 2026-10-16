@@ -1,23 +1,25 @@
 version: '3.9'
 services:
   postgres:
-    image: postgres:13-alpine
+    image: postgres:16-alpine
     restart: always
     env_file:
       - .env
     environment:
       - POSTGRES_USER=$POSTGRES_USER
-      - POSTGRES_PASSWORD:$POSTGRES_PASSWORD
+      - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
     ports:
       - '$POSTGRES_PORT:$POSTGRES_PORT_DOCKER'
 
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres16_data:/var/lib/postgresql/data
     networks:
       - db_network
 
 volumes:
+  # 기존 PostgreSQL 13 데이터. 16과 호환되지 않아 마운트하지 않지만 롤백용으로 남겨 둔다 (삭제 금지).
   postgres_data:
+  postgres16_data:
 
 networks:
   db_network:
