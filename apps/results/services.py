@@ -11,7 +11,7 @@ from apps.results.calculator import CraftingCalculator, RecipeError
 from apps.results.models import Result
 
 
-def build_calculator(prices=None):
+def _build_calculator(prices=None):
     """load_recipes()로 읽은 레시피와 시세로 계산기를 만든다. prices가 None이면 DB 시세를 쓴다."""
     recipes = load_recipes()
     if prices is None:
@@ -19,7 +19,8 @@ def build_calculator(prices=None):
     return CraftingCalculator(recipes, prices)
 
 
-def calculate(calculator, product_name):
+def _calculate_or_400(calculator, product_name):
+    """계산기로 비용을 계산하고, RecipeError는 400(BadRequest)으로 바꾼다."""
     try:
         return calculator.calculate(product_name)
     except RecipeError as error:
@@ -27,7 +28,7 @@ def calculate(calculator, product_name):
 
 
 def _apply_calculation(result, calculator):
-    sheet = calculate(calculator, result.product.name)
+    sheet = _calculate_or_400(calculator, result.product.name)
     if abs(round_half_up(sheet.total_price)) > INT32_MAX:
         # totalPrice 컬럼이 Postgres integer라서 저장할 수 없다 (미리 계산은 저장하지 않으므로 제한 없음).
         raise BadRequest(f"합계 금액이 너무 커서 저장할 수 없습니다. ({result.product.name})")
@@ -58,7 +59,7 @@ def create_missing_results():
     if not products:
         raise BadRequest("추가할 결과가 없습니다.")
 
-    calculator = build_calculator()
+    calculator = _build_calculator()
     results = []
     for product in products:
         result = Result(product=product)
@@ -78,9 +79,9 @@ def preview_results(prices):
     if missing is not None:
         raise BadRequest(f"결과 정보가 없는 물품 ({missing.name}) 입니다.")
 
-    calculator = build_calculator(prices)
+    calculator = _build_calculator(prices)
     return [
-        (result, calculate(calculator, result.product.name))
+        (result, _calculate_or_400(calculator, result.product.name))
         for result in Result.objects.with_product().in_display_order()
     ]
 
@@ -89,7 +90,7 @@ def preview_results(prices):
 def recalculate_results():
     """저장된 모든 결과를 현재 DB 시세로 다시 계산해 저장한다 (시세 수정 시 호출)."""
     _lock_prices()
-    calculator = build_calculator()
+    calculator = _build_calculator()
     results = list(Result.objects.select_related("product"))
     now = timezone.now()
     for result in results:
