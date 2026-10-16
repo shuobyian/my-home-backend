@@ -24,3 +24,10 @@ def catalog(db):
 @pytest.fixture
 def experiences(db):
     Experience.objects.bulk_create(Experience(level=level, amount=100000 + level * 1000) for level in range(55, 113))
+
+
+@pytest.fixture
+def ample(client, db):
+    Market.objects.create(name="호두", price=100)
+    make_product("식물앰플-중급 가속", [("호두", True, 2)], crafting_price=1000)
+    client.post("/result")
