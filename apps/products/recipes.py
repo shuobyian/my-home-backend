@@ -6,7 +6,10 @@ from apps.results.calculator import CraftingCalculator, Ingredient, RecipeError
 
 
 def load_recipes():
-    """전체 레시피(쿼리 2번)를 물품명 → 재료 목록 dict로 읽는다. 재료는 레시피 순서(id 순)다."""
+    """전체 레시피(쿼리 2번)를 물품명 → 재료 목록 dict로 읽는다.
+
+    재료는 레시피 순서(id 순)다. 물품 응답의 재료 순서(apps.products.models.materials_prefetch)와 같은 기준이다.
+    """
     recipes = {name: [] for name in Product.objects.values_list("name", flat=True)}
     materials = Material.objects.order_by("product_id", "id").values_list("product__name", "name", "basic", "count")
     for product_name, name, basic, count in materials:

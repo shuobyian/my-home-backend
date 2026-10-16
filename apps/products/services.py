@@ -4,19 +4,15 @@ from django.db import IntegrityError, transaction
 from rest_framework.exceptions import ValidationError
 
 from apps.common.exceptions import BadRequest
-from apps.products.models import Material, Product, materials_prefetch
+from apps.products.models import Material, Product
 from apps.products.recipes import check_recipes
 from apps.products.serializers import ProductInputSerializer
 
 DUPLICATE_PRODUCT_MESSAGE = "이미 추가된 물품입니다."
 
 
-def products_with_materials():
-    return Product.objects.prefetch_related(materials_prefetch())
-
-
 def list_products(name=None):
-    queryset = products_with_materials().order_by("id")
+    queryset = Product.objects.with_materials().order_by("id")
     if name:
         queryset = queryset.filter(name__contains=name)
     return queryset
@@ -28,7 +24,7 @@ def create_product(data):
         raise BadRequest(DUPLICATE_PRODUCT_MESSAGE)
     product = _insert_products_with_materials([data])[0]
     check_recipes([product.name])
-    return products_with_materials().get(pk=product.pk)
+    return Product.objects.with_materials().get(pk=product.pk)
 
 
 @transaction.atomic
@@ -49,7 +45,7 @@ def bulk_create_products(rows):
         raise BadRequest("새로 추가할 물품이 없습니다.")
     products = _insert_products_with_materials(_validate_new_rows(new_rows))
     check_recipes([product.name for product in products])
-    return list(products_with_materials().filter(pk__in=[product.pk for product in products]).order_by("id"))
+    return list(Product.objects.with_materials().filter(pk__in=[product.pk for product in products]).order_by("id"))
 
 
 @transaction.atomic
@@ -72,7 +68,7 @@ def update_product(data):
     product.materials.all().delete()
     _create_materials(product, materials)
     check_recipes([product.name])
-    return products_with_materials().get(pk=product.pk)
+    return Product.objects.with_materials().get(pk=product.pk)
 
 
 @transaction.atomic
