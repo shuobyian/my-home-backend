@@ -1,22 +1,15 @@
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
 from django.utils import timezone
 
 from apps.common.exceptions import BadRequest
 from apps.common.fields import INT32_MAX
 from apps.common.numbers import round_half_up
 from apps.markets.models import Market
-from apps.products.models import Material, Product
+from apps.products.models import Product
 from apps.products.recipes import load_recipes
 from apps.results.calculator import CraftingCalculator, RecipeError
 from apps.results.models import Result
 from apps.results.presenters import present_result
-
-
-def results_with_products():
-    return Result.objects.select_related("product").prefetch_related(
-        Prefetch("product__materials", queryset=Material.objects.order_by("id"))
-    )
 
 
 def build_calculator(prices=None):
@@ -44,11 +37,11 @@ def _apply_calculation(result, calculator):
 
 def _lock_prices():
     """시세 행 전체를 잠근다. 결과를 저장하는 작업끼리, 그리고 시세 수정과 순서대로 실행되게 한다."""
-    list(Market.objects.select_for_update().order_by("id").values_list("id", flat=True))
+    list(Market.objects.lock_all().values_list("id", flat=True))
 
 
 def list_results(name=None, tool=None, category=None):
-    queryset = results_with_products().order_by("product__level", "product__name", "id")
+    queryset = Result.objects.with_product().in_display_order()
     if name:
         queryset = queryset.filter(product__name__contains=name)
     if tool:
@@ -89,7 +82,7 @@ def preview_results(prices):
     calculator = build_calculator(prices)
     return [
         present_result(result, calculate(calculator, result.product.name))
-        for result in results_with_products().order_by("product__level", "product__name", "id")
+        for result in Result.objects.with_product().in_display_order()
     ]
 
 

@@ -1,7 +1,7 @@
 from apps.common.exceptions import BadRequest
 from apps.experiences.models import Experience
+from apps.results.models import Result
 from apps.results.presenters import present_result
-from apps.results.services import results_with_products
 
 WALNUT_MIN_LEVEL = 55
 MAX_LEVEL = 112
@@ -41,7 +41,7 @@ def walnut(present_level, present_experience=0, objective_level=None, production
     walnut_experience = int(WALNUT_EXPERIENCE * (1 + production_percent / 100))
     remind_count = int(remind_experience / walnut_experience)
 
-    ample = results_with_products().filter(product__name=AMPLE_PRODUCT_NAME).first()
+    ample = Result.objects.with_product().filter(product__name=AMPLE_PRODUCT_NAME).first()
     if ample is None:
         raise BadRequest(f"{AMPLE_PRODUCT_NAME} 결과 정보가 없습니다.")
 

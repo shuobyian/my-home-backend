@@ -128,3 +128,10 @@ def test_empty_market_update_still_recalculates(client, catalog):
 
     assert response.status_code == 400
     assert response.json()["message"] == "시세 정보가 없는 재료가 있습니다. (의자: 천)"
+
+
+def test_lock_all_locks_every_market_in_id_order():
+    query = Market.objects.lock_all().query
+
+    assert query.select_for_update is True
+    assert query.order_by == ("id",)

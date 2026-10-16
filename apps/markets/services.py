@@ -16,7 +16,7 @@ def update_markets(items):
     재계산에 실패하면 시세 저장도 함께 취소된다.
     """
     # 시세 전체를 잠가서 동시에 들어온 시세 수정이 서로의 재계산 결과를 덮어쓰지 않게 한다.
-    existing = {market.pk: market for market in Market.objects.select_for_update().order_by("id")}
+    existing = {market.pk: market for market in Market.objects.lock_all()}
     saved, to_update, to_create = [], {}, []
     for item in items:
         market = existing.get(item.get("id"))

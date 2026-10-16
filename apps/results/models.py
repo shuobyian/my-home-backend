@@ -2,8 +2,18 @@ from django.db import models
 from django.db.models.functions import Now
 
 from apps.common.numbers import join_numbers, round_half_up, split_csv, split_numbers
-from apps.products.models import Product
+from apps.products.models import Product, materials_prefetch
 from apps.results.calculator import CostSheet, MaterialCost
+
+
+class ResultQuerySet(models.QuerySet):
+    def with_product(self):
+        """물품과 물품 재료(id 순)를 함께 읽는다 (present_result가 쓰는 데이터)."""
+        return self.select_related("product").prefetch_related(materials_prefetch("product__materials"))
+
+    def in_display_order(self):
+        """레벨, 이름 순. GET /result와 계산기(POST /result/calculator) 응답이 같은 순서여야 한다."""
+        return self.order_by("product__level", "product__name", "id")
 
 
 class Result(models.Model):
@@ -26,6 +36,8 @@ class Result(models.Model):
     counts = models.CharField(max_length=None)
     prices = models.CharField(max_length=None)
     total_price = models.IntegerField(db_column="totalPrice")
+
+    objects = ResultQuerySet.as_manager()
 
     class Meta:
         db_table = "result"

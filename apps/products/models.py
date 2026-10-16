@@ -60,3 +60,11 @@ class Material(models.Model):
 
     def __str__(self):
         return f"{self.name} x{self.count}"
+
+
+def materials_prefetch(lookup="materials"):
+    """재료는 항상 id 순(= 레시피 순서)으로 읽는다. 응답의 재료 순서가 이 정렬에 달려 있다.
+
+    Prefetch는 중첩 prefix를 붙일 때 객체가 바뀌므로 모듈 상수로 두지 않고 호출할 때마다 새로 만든다.
+    """
+    return models.Prefetch(lookup, queryset=Material.objects.order_by("id"))

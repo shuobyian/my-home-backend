@@ -1,11 +1,10 @@
 from collections import Counter
 
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
 from rest_framework.exceptions import ValidationError
 
 from apps.common.exceptions import BadRequest
-from apps.products.models import Material, Product
+from apps.products.models import Material, Product, materials_prefetch
 from apps.products.recipes import check_recipes
 from apps.products.serializers import ProductInputSerializer
 
@@ -13,7 +12,7 @@ DUPLICATE_PRODUCT_MESSAGE = "이미 추가된 물품입니다."
 
 
 def products_with_materials():
-    return Product.objects.prefetch_related(Prefetch("materials", queryset=Material.objects.order_by("id")))
+    return Product.objects.prefetch_related(materials_prefetch())
 
 
 def list_products(name=None):
