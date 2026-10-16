@@ -24,11 +24,9 @@ def list_products(name=None):
 
 @transaction.atomic
 def create_product(data):
-    materials = data.pop("materials")
     if Product.objects.filter(name=data["name"]).exists():
         raise BadRequest(DUPLICATE_PRODUCT_MESSAGE)
-    product = _save_new_products([Product(**data)])[0]
-    _create_materials(product, materials)
+    product = _insert_products_with_materials([data])[0]
     check_recipes([product.name])
     return products_with_materials().get(pk=product.pk)
 
@@ -49,16 +47,7 @@ def bulk_create_products(rows):
     new_rows = [(index, row) for index, (row, name) in enumerate(zip(rows, names, strict=True)) if name not in existing]
     if not new_rows:
         raise BadRequest("새로 추가할 물품이 없습니다.")
-    items = _validate_new_rows(new_rows)
-
-    products = _save_new_products(
-        [Product(**{key: value for key, value in item.items() if key != "materials"}) for item in items]
-    )
-    Material.objects.bulk_create(
-        Material(product=product, **material)
-        for product, item in zip(products, items, strict=True)
-        for material in item["materials"]
-    )
+    products = _insert_products_with_materials(_validate_new_rows(new_rows))
     check_recipes([product.name for product in products])
     return list(products_with_materials().filter(pk__in=[product.pk for product in products]).order_by("id"))
 
@@ -124,6 +113,19 @@ def _validate_new_rows(indexed_rows):
         # 에러 위치는 업로드 목록의 원래 순서 기준 (예: products.3.count)
         raise ValidationError({"products": errors})
     return items
+
+
+def _insert_products_with_materials(items):
+    """검증된 물품 dict(재료 포함) 목록을 물품과 재료로 저장하고, 저장한 물품 목록을 돌려준다."""
+    products = _save_new_products(
+        [Product(**{key: value for key, value in item.items() if key != "materials"}) for item in items]
+    )
+    Material.objects.bulk_create(
+        Material(product=product, **material)
+        for product, item in zip(products, items, strict=True)
+        for material in item["materials"]
+    )
+    return products
 
 
 def _save_new_products(products):
