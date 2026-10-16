@@ -1,4 +1,13 @@
-# compiled output
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+/staticfiles
+
+# 이전 NestJS 산출물 / 로컬 데이터
 /dist
 /node_modules
 /db

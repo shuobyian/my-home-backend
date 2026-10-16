@@ -1,12 +1,30 @@
-node_modules
-npm-debug.log
-Dockerfile*
-docker-compose*
-.dockerignore
 .git
 .gitignore
+.dockerignore
+Dockerfile*
+docker-compose*
 README.md
 LICENSE
 .vscode
-src
-test
+.idea
+.DS_Store
+
+# Python
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+tests
+requirements-dev.txt
+
+# 이전 NestJS 빌드 산출물 / 로컬 데이터
+node_modules
+dist
+db
+*.log
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# 비밀키는 이미지에 넣지 않는다
+myhome.pem
