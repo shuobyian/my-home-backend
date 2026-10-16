@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from apps.products.models import Material, Product
+from apps.products.models import Category, Material, Product, Tool
 from apps.results.models import Result
 
 pytestmark = pytest.mark.django_db
@@ -312,8 +312,6 @@ def test_health(client):
 
 def test_tool_values_match_frontend():
     """프론트엔드 src/apis/type/Tool.ts, Category.ts와 같은 값이어야 한다."""
-    from apps.products.models import Category, Tool
-
     assert Tool.values == [
         "WOOD",
         "FIRE_PIT",

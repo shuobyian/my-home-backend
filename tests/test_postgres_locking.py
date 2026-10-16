@@ -94,7 +94,8 @@ def test_product_writes_lock_rows(client, catalog, send):
 
     assert response.status_code == 200
     locks = positions(sqls, 'FROM "product"', "FOR UPDATE")
-    # 수정은 레시피 검증 SELECT가 잠금 뒤에도 나가므로 읽기는 보지 않고 쓰기만 기준으로 둔다.
+    # 물품은 잠금 쿼리(select_for_update)가 곧 대상 행을 처음 읽는 쿼리라서 시세처럼 따로 비교할 앞선 읽기가 없다.
+    # 그 뒤의 SELECT(중복 이름·참조 확인, 레시피 검증, 다시 읽기)는 모두 잠금 뒤에 나가므로 쓰기만 기준으로 둔다.
     writes = positions(sqls, 'UPDATE "product"') + positions(sqls, 'DELETE FROM "material"')
     writes += positions(sqls, 'DELETE FROM "product"')
     assert locks

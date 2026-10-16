@@ -165,8 +165,6 @@ def test_calculator_rejects_invalid_prices(client, catalog, markets):
 
 
 def test_recalculate_command(catalog):
-    from django.core.management import call_command
-
     make_product("새물품", [("천", True, 1)])
     call_command("recalculate_results")
     assert not Result.objects.exists()
@@ -180,9 +178,6 @@ def test_recalculate_command(catalog):
 
 
 def test_recalculate_command_fails_without_saving(catalog):
-    from django.core.management import call_command
-    from django.core.management.base import CommandError
-
     call_command("recalculate_results", "--create-missing")
     Market.objects.filter(name="천").delete()
 
