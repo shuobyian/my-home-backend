@@ -141,6 +141,7 @@ def test_update_product_replaces_materials(client, catalog):
 def test_update_unknown_product(client, db):
     response = client.put("/product", {"id": 999, "materials": []}, format="json")
     assert response.status_code == 400
+    assert response.json()["message"] == "존재하지 않는 물품입니다."
 
 
 def test_delete_products_cascades(client, catalog):
@@ -378,13 +379,6 @@ def test_update_with_own_name_is_allowed(client, catalog):
     payload = {"id": plank.id, "name": "판자", "materials": [{"name": "나무", "basic": True, "count": 3}]}
 
     assert client.put("/product", payload, format="json").status_code == 200
-
-
-def test_update_unknown_product_message(client, db):
-    response = client.put("/product", {"id": 999, "materials": []}, format="json")
-
-    assert response.status_code == 400
-    assert response.json()["message"] == "존재하지 않는 물품입니다."
 
 
 def test_rename_rolls_back_when_recipe_check_fails(client, catalog):

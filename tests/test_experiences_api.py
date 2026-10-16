@@ -62,6 +62,7 @@ def test_walnut_without_ample_result(client, experiences):
     response = client.get("/experience/walnut", {"presentLevel": 60})
 
     assert response.status_code == 400
+    assert response.json()["message"] == "식물앰플-중급 가속 결과 정보가 없습니다."
 
 
 def test_list_experiences_sorted_by_level_not_insert_order(client):
@@ -82,13 +83,6 @@ def test_walnut_missing_experience_levels_message(client):
 
     assert response.status_code == 400
     assert response.json()["message"] == "경험치 정보가 없는 레벨이 있습니다. (Lv.61, 62)"
-
-
-def test_walnut_without_ample_result_message(client, experiences):
-    response = client.get("/experience/walnut", {"presentLevel": 60})
-
-    assert response.status_code == 400
-    assert response.json()["message"] == "식물앰플-중급 가속 결과 정보가 없습니다."
 
 
 def test_walnut_zero_remind_count(client, experiences, ample):
