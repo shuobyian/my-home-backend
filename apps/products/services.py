@@ -34,7 +34,7 @@ def create_product(data):
 
 
 @transaction.atomic
-def create_products(rows):
+def bulk_create_products(rows):
     """업로드한 물품 중 아직 없는 물품만 재료와 함께 추가한다.
 
     프론트엔드는 새 물품만이 아니라 로컬 카탈로그 전체를 보낸다. 이미 있는 물품은 건너뛰므로 검증도 하지 않는다

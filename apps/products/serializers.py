@@ -40,7 +40,7 @@ class ProductUpdateSerializer(serializers.Serializer):
 
 
 class ProductBulkCreateSerializer(serializers.Serializer):
-    """POST /product/all 본문. 각 물품은 services.create_products에서 새로 추가할 것만 검증한다."""
+    """POST /product/all 본문. 각 물품은 services.bulk_create_products에서 새로 추가할 것만 검증한다."""
 
     products = serializers.ListField(child=serializers.DictField())
 

@@ -41,5 +41,5 @@ class ProductBulkCreateView(APIView):
     def post(self, request):
         serializer = ProductBulkCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        products = services.create_products(serializer.validated_data["products"])
+        products = services.bulk_create_products(serializer.validated_data["products"])
         return Response(ProductSerializer(products, many=True).data, status=status.HTTP_201_CREATED)
