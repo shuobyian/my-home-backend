@@ -33,3 +33,23 @@ class NumberField(serializers.FloatField):
 
     def to_representation(self, value):
         return normalize(value)
+
+
+def validate_csv_safe_name(value):
+    # 결과 테이블이 재료 이름을 콤마로 이어 저장(apps.common.numbers)하므로 콤마가 들어가면 결과가 깨진다.
+    if "," in value:
+        raise serializers.ValidationError("이름에 콤마(,)를 넣을 수 없습니다.")
+    return value
+
+
+class CsvSafeNameField(serializers.CharField):
+    """최대 255자(모델 CharField max_length와 같음), 콤마 금지.
+
+    결과 테이블이 이름을 콤마로 이어 저장(apps.common.numbers)하기 때문이다.
+    호출하는 쪽에서 max_length나 validators를 넘기지 않는다.
+    """
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("max_length", 255)
+        kwargs.setdefault("validators", [validate_csv_safe_name])
+        super().__init__(**kwargs)
