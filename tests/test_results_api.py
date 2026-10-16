@@ -2,7 +2,7 @@ import pytest
 
 from apps.markets.models import Market
 from apps.results.models import Result
-from tests.conftest import make_product
+from tests.factories import make_product
 
 pytestmark = pytest.mark.django_db
 

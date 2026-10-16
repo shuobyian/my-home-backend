@@ -1,14 +1,13 @@
 import pytest
 
-from tests.conftest import make_product
+from apps.markets.models import Market
+from tests.factories import make_product
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
 def ample(client, db):
-    from apps.markets.models import Market
-
     Market.objects.create(name="호두", price=100)
     make_product("식물앰플-중급 가속", [("호두", True, 2)], crafting_price=1000)
     client.post("/result")
