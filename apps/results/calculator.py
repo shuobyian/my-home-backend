@@ -80,6 +80,10 @@ class CraftingCalculator:
         )
         return CostSheet(materials, sum(material.price for material in materials))
 
+    def check(self, product_name: str) -> None:
+        """시세와 관계없이 레시피를 끝까지 펼칠 수 있는지 확인한다 (잘못된 하위 물품명, 순환 참조)."""
+        self._expand(product_name)
+
     def _price(self, product_name: str, material_name: str) -> float:
         price = self._prices.get(material_name)
         if price is None:

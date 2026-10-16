@@ -8,6 +8,11 @@ def health(request):
     return HttpResponse("Hello World!", content_type="text/html; charset=utf-8")
 
 
+def bad_request(request, exception=None):
+    """Django 단계에서 거절한 요청(SuspiciousOperation 등)도 JSON으로 응답한다."""
+    return JsonResponse(nest_error_body(400, "Bad Request"), status=400)
+
+
 def not_found(request, exception=None):
     message = f"Cannot {request.method} {request.path}"
     return JsonResponse(nest_error_body(404, message), status=404)

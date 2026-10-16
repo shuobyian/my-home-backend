@@ -70,7 +70,7 @@ USE_TZ = True
 # NestJS 라우팅처럼 끝의 슬래시 유무와 관계없이 같은 URL로 처리한다 (urls에서 처리).
 APPEND_SLASH = False
 
-# 기존 body-parser limit(50mb)과 동일
+# 기존 body-parser limit(50mb)과 동일 (JSON 본문은 apps.common.parsers.LimitedJSONParser가 적용)
 DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -79,7 +79,7 @@ CORS_ALLOW_HEADERS = (*default_headers, "*")
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+    "DEFAULT_PARSER_CLASSES": ["apps.common.parsers.LimitedJSONParser"],
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     "UNAUTHENTICATED_USER": None,

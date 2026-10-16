@@ -7,6 +7,7 @@ from django.db.models import Prefetch
 
 from apps.common.exceptions import BadRequest
 from apps.products.models import Material, Product
+from apps.results.services import check_recipes
 
 DUPLICATE_PRODUCT_MESSAGE = "이미 추가된 물품입니다."
 
@@ -36,6 +37,7 @@ def create_product(data):
         raise BadRequest(DUPLICATE_PRODUCT_MESSAGE)
     product = _save_new_products([Product(**data)])[0]
     _create_materials(product, materials)
+    check_recipes([product.name])
     return products_with_materials().get(pk=product.pk)
 
 
@@ -59,6 +61,7 @@ def create_products(items):
         for product, item in zip(products, new_items, strict=True)
         for material in item["materials"]
     )
+    check_recipes([product.name for product in products])
     return list(products_with_materials().filter(pk__in=[product.pk for product in products]).order_by("id"))
 
 
@@ -71,22 +74,39 @@ def update_product(data):
     if "name" in data and Product.objects.filter(name=data["name"]).exclude(pk=product.pk).exists():
         raise BadRequest(DUPLICATE_PRODUCT_MESSAGE)
 
+    old_name = product.name
     for field, value in data.items():
         setattr(product, field, value)
     product.save()
+    if product.name != old_name:
+        # 레시피는 물품을 이름으로 가리키므로, 이 물품을 재료로 쓰는 다른 레시피도 새 이름으로 바꾼다.
+        Material.objects.filter(basic=False, name=old_name).update(name=product.name)
 
     product.materials.all().delete()
     _create_materials(product, materials)
+    check_recipes([product.name])
     return products_with_materials().get(pk=product.pk)
 
 
 @transaction.atomic
 def delete_products(ids):
     """기존 TypeORM DeleteResult 모양({raw, affected})을 id마다 돌려준다."""
-    existing = set(Product.objects.filter(pk__in=ids).values_list("pk", flat=True))
+    products = dict(Product.objects.select_for_update().filter(pk__in=ids).values_list("pk", "name"))
+    references = list(
+        Material.objects.filter(basic=False, name__in=products.values())
+        .exclude(product_id__in=products)
+        .order_by("product__name", "name")
+        .values_list("product__name", "name")
+        .distinct()
+    )
+    if references:
+        # 지우면 그 물품을 재료로 쓰는 레시피를 계산할 수 없게 되어 시세 수정까지 막힌다.
+        detail = ", ".join(f"{parent}: {name}" for parent, name in references)
+        raise BadRequest(f"다른 물품의 재료로 쓰이는 물품은 삭제할 수 없습니다. ({detail})")
+
     # 재료(material)와 결과(result)는 CASCADE로 함께 지워진다.
-    Product.objects.filter(pk__in=existing).delete()
-    return [{"raw": [], "affected": 1 if product_id in existing else 0} for product_id in ids]
+    Product.objects.filter(pk__in=products).delete()
+    return [{"raw": [], "affected": 1 if product_id in products else 0} for product_id in ids]
 
 
 def _save_new_products(products):

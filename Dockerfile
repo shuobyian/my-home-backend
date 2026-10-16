@@ -9,7 +9,7 @@ WORKDIR /usr/app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# .dockerignore에 적힌 파일을 제외하고 복사한다 (.env 포함)
+# .dockerignore에 적힌 파일을 제외하고 복사한다. 기존 Nest 배포처럼 .env도 이미지에 들어간다.
 COPY . .
 
 EXPOSE 8123

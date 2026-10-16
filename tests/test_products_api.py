@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from apps.products.models import Material, Product
@@ -143,15 +145,124 @@ def test_update_unknown_product(client, db):
 
 def test_delete_products_cascades(client, catalog):
     client.post("/result")
-    plank = catalog["판자"]
+    table = catalog["식탁"]
 
-    response = client.delete("/product", [plank.id, 999], format="json")
+    response = client.delete("/product", [table.id, 999], format="json")
 
     assert response.status_code == 200
     assert response.json() == [{"raw": [], "affected": 1}, {"raw": [], "affected": 0}]
-    assert not Product.objects.filter(pk=plank.pk).exists()
-    assert not Material.objects.filter(product_id=plank.pk).exists()
-    assert not Result.objects.filter(product_id=plank.pk).exists()
+    assert not Product.objects.filter(pk=table.pk).exists()
+    assert not Material.objects.filter(product_id=table.pk).exists()
+    assert not Result.objects.filter(product_id=table.pk).exists()
+
+
+def test_delete_accepts_frontend_ids_body(client, catalog):
+    """프론트엔드는 {"ids": [...]}로 보낸다 (기존 서버는 이 형식을 처리하지 못했다)."""
+    ids = [catalog["식탁"].id, catalog["의자"].id]
+
+    response = client.delete("/product", {"ids": ids}, format="json")
+
+    assert response.json() == [{"raw": [], "affected": 1}, {"raw": [], "affected": 1}]
+    assert not Product.objects.filter(pk__in=ids).exists()
+
+
+def test_delete_product_used_by_other_recipe_is_rejected(client, catalog):
+    response = client.delete("/product", [catalog["판자"].id], format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "다른 물품의 재료로 쓰이는 물품은 삭제할 수 없습니다. (식탁: 판자, 의자: 판자)"
+    assert Product.objects.filter(pk=catalog["판자"].pk).exists()
+
+    # 그 물품을 쓰는 물품과 함께 지우면 된다
+    ids = [catalog["판자"].id, catalog["식탁"].id, catalog["의자"].id]
+    assert client.delete("/product", ids, format="json").status_code == 200
+
+
+def test_rename_product_updates_recipes_that_use_it(client, catalog):
+    plank = catalog["판자"]
+    payload = {"id": plank.id, "name": "널빤지", "materials": [{"name": "나무", "basic": True, "count": 3}]}
+
+    assert client.put("/product", payload, format="json").status_code == 200
+
+    assert list(catalog["식탁"].materials.filter(basic=False).values_list("name", flat=True)) == ["널빤지"]
+    assert client.post("/result").status_code == 201
+
+
+def test_create_product_with_unknown_sub_product_is_rejected(client, catalog):
+    payload = product_payload(materials=[{"name": "없는물품", "basic": False, "count": 1}])
+
+    response = client.post("/product", payload, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "하위 재료에 잘못된 물품명이 있습니다. (새물품: 없는물품)"
+    assert not Product.objects.filter(name="새물품").exists()
+
+
+def test_bulk_create_allows_references_within_upload(client, db):
+    products = [
+        product_payload("상위", materials=[{"name": "하위", "basic": False, "count": 2}]),
+        product_payload("하위"),
+    ]
+
+    assert client.post("/product/all", {"products": products}, format="json").status_code == 201
+
+
+def test_update_creating_cycle_is_rejected(client, catalog):
+    plank = catalog["판자"]
+    payload = {"id": plank.id, "materials": [{"name": "식탁", "basic": False, "count": 1}]}
+
+    response = client.put("/product", payload, format="json")
+
+    assert response.status_code == 400
+    assert "순환 참조" in response.json()["message"]
+    assert list(plank.materials.values_list("name", flat=True)) == ["나무"]
+
+
+@pytest.mark.parametrize("count", ["NaN", "Infinity", "inf", 0, -1, 1_000_001])
+def test_invalid_material_count_is_rejected(client, db, count):
+    payload = product_payload(materials=[{"name": "나무", "basic": True, "count": count}])
+
+    response = client.post("/product", payload, format="json")
+
+    assert response.status_code == 400
+    assert not Product.objects.exists()
+
+
+def test_overflowing_json_number_is_rejected(client, db):
+    # 1e999는 JSON 파싱 단계에서 inf가 된다
+    body = json.dumps(product_payload()).replace('"count": 2', '"count": 1e999')
+
+    response = client.generic("POST", "/product", body, content_type="application/json")
+
+    assert response.status_code == 400
+    assert not Product.objects.exists()
+
+
+def test_integer_out_of_db_range_is_rejected(client, db):
+    response = client.post("/product", product_payload(level=2**31), format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"].startswith("level:")
+
+
+def test_login_without_password(client):
+    response = client.post("/product/login", {}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "비밀번호가 올바르지 않습니다."
+
+
+def test_request_body_over_limit_is_rejected(client, settings, db):
+    settings.DATA_UPLOAD_MAX_MEMORY_SIZE = 100
+
+    response = client.post("/product", product_payload(name="a" * 200), format="json")
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "statusCode": 413,
+        "message": "request entity too large",
+        "error": "Request Entity Too Large",
+    }
 
 
 def test_unknown_route_uses_nest_error_format(client, settings):

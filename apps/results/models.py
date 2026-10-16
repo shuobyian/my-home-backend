@@ -1,7 +1,7 @@
 from django.db import models
 from django.db.models.functions import Now
 
-from apps.common.numbers import join_numbers, split_csv, split_numbers
+from apps.common.numbers import join_numbers, round_half_up, split_csv, split_numbers
 from apps.products.models import Product
 from apps.results.calculator import CostSheet, MaterialCost
 
@@ -10,6 +10,7 @@ class Result(models.Model):
     """물품별 계산 결과 캐시.
 
     기본 재료 이름/수량/가격을 같은 순서의 콤마 문자열로 저장한다 (기존 스키마 유지).
+    totalPrice 컬럼은 정수라서 반올림해 저장하고, 응답의 합계는 재료 가격의 합으로 계산한다.
     """
 
     id = models.AutoField(primary_key=True)
@@ -39,13 +40,13 @@ class Result(models.Model):
         counts = _pad(split_numbers(self.counts), len(names))
         prices = _pad(split_numbers(self.prices), len(names))
         materials = tuple(map(MaterialCost, names, counts, prices))
-        return CostSheet(materials, self.total_price)
+        return CostSheet(materials, sum(material.price for material in materials))
 
     def apply_cost_sheet(self, sheet: CostSheet) -> None:
         self.names = ",".join(material.name for material in sheet.materials)
         self.counts = join_numbers(material.count for material in sheet.materials)
         self.prices = join_numbers(material.price for material in sheet.materials)
-        self.total_price = round(sheet.total_price)
+        self.total_price = round_half_up(sheet.total_price)
 
 
 def _pad(values, length):

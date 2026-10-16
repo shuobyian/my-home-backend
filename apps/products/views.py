@@ -7,6 +7,7 @@ from apps.common.params import paginate, query_page, query_str
 from apps.products import services
 from apps.products.serializers import (
     ProductBulkCreateSerializer,
+    ProductIdsSerializer,
     ProductInputSerializer,
     ProductSerializer,
     ProductUpdateSerializer,
@@ -14,11 +15,8 @@ from apps.products.serializers import (
 
 
 class LoginInputSerializer(serializers.Serializer):
-    password = serializers.CharField(trim_whitespace=False, allow_blank=True)
-
-
-class ProductIdsSerializer(serializers.ListSerializer):
-    child = serializers.IntegerField()
+    # 비밀번호가 없어도 기존 서버처럼 '비밀번호가 올바르지 않습니다.'로 응답한다.
+    password = serializers.CharField(trim_whitespace=False, allow_blank=True, default="")
 
 
 class LoginView(APIView):
@@ -50,7 +48,7 @@ class ProductView(APIView):
     def delete(self, request):
         serializer = ProductIdsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        return Response(services.delete_products(serializer.validated_data))
+        return Response(services.delete_products(serializer.validated_data["ids"]))
 
 
 class ProductBulkCreateView(APIView):

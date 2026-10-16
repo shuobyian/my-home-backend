@@ -11,5 +11,6 @@ urlpatterns = [
     path("", include("apps.experiences.urls")),
 ]
 
+handler400 = "apps.common.views.bad_request"
 handler404 = "apps.common.views.not_found"
 handler500 = "apps.common.views.server_error"

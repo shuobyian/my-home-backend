@@ -1,8 +1,9 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 
 from apps.common.exceptions import BadRequest
+from apps.common.fields import INT32_MAX
 from apps.markets.models import Market
 from apps.products.models import Material, Product
 from apps.results.calculator import CraftingCalculator, Ingredient, RecipeError
@@ -30,9 +31,22 @@ def build_calculator(prices=None):
 
 def calculate(calculator, product_name):
     try:
-        return calculator.calculate(product_name)
+        sheet = calculator.calculate(product_name)
     except RecipeError as error:
         raise BadRequest(str(error)) from None
+    if abs(sheet.total_price) > INT32_MAX:
+        raise BadRequest(f"합계 금액이 너무 큽니다. ({product_name})")
+    return sheet
+
+
+def check_recipes(product_names):
+    """저장한 레시피를 끝까지 펼칠 수 있는지 확인한다. 실패하면 400 (트랜잭션 안에서 부르면 저장도 취소)."""
+    calculator = build_calculator(prices={})
+    for name in product_names:
+        try:
+            calculator.check(name)
+        except RecipeError as error:
+            raise BadRequest(str(error)) from None
 
 
 def list_results(name=None, tool=None, category=None):
@@ -59,7 +73,12 @@ def create_missing_results():
         result = Result(product=product)
         result.apply_cost_sheet(calculate(calculator, product.name))
         results.append(result)
-    return Result.objects.bulk_create(results)
+    try:
+        with transaction.atomic():
+            return Result.objects.bulk_create(results)
+    except IntegrityError:
+        # 같은 요청이 동시에 들어와 다른 요청이 먼저 결과를 만든 경우
+        raise BadRequest("추가할 결과가 없습니다.") from None
 
 
 def preview_results(prices):

@@ -7,10 +7,13 @@ NestJS 컨트롤러는 쿼리 값을 검증 없이 문자열로 받았다. 여�
 import math
 
 from apps.common.exceptions import BadRequest
+from apps.common.fields import INT32_MAX
 
 
 def query_str(request, name):
     value = request.query_params.get(name, "")
+    if "\x00" in value:
+        raise BadRequest(f"{name} 값이 올바르지 않습니다.")
     return value if value != "" else None
 
 
@@ -43,9 +46,12 @@ def query_int(request, name, *, default=None, min_value=None, max_value=None, re
 
 
 def query_page(request):
-    """page/size 쿼리를 읽는다. size가 없으면 페이지 없이 전체를 조회한다 (기존 동작)."""
-    page = query_int(request, "page", default=0, min_value=0)
-    size = query_int(request, "size", min_value=1)
+    """page/size 쿼리를 읽는다. size가 없으면 전체를, page가 없으면 첫 페이지를 조회한다.
+
+    기존 서버는 둘 다 없으면 500이었다. 프론트엔드는 항상 둘 다 보낸다.
+    """
+    page = query_int(request, "page", default=0, min_value=0, max_value=INT32_MAX)
+    size = query_int(request, "size", min_value=1, max_value=INT32_MAX)
     return page, size
 
 

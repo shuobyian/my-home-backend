@@ -9,6 +9,9 @@ from apps.results import services
 from apps.results.presenters import present_result
 from apps.results.serializers import CalculatorInputSerializer, ResultSerializer
 
+# 한 번에 계산할 수 있는 제작 개수 상한
+MAX_CRAFT_COUNT = 1_000_000
+
 
 def _query_choice(request, name, choices):
     value = query_str(request, name)
@@ -20,7 +23,7 @@ def _query_choice(request, name, choices):
 class ResultView(APIView):
     def get(self, request):
         page, size = query_page(request)
-        count = query_int(request, "count", default=1, min_value=1)
+        count = query_int(request, "count", default=1, min_value=1, max_value=MAX_CRAFT_COUNT)
         queryset = services.list_results(
             name=query_str(request, "name"),
             tool=_query_choice(request, "tool", Tool),

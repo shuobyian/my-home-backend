@@ -120,3 +120,67 @@ def test_market_list_and_create(client, catalog):
     assert response.status_code == 200
     assert response.json()[0]["name"] == "금"
     assert [market["name"] for market in client.get("/market").json()] == ["나무", "못", "천", "금"]
+
+
+def test_fractional_total_is_rounded_half_up_and_response_uses_material_sum(client, catalog):
+    make_product("반쪽", [("나무", True, 0.25)])  # 나무 10원 x 0.25 = 2.5원
+
+    client.post("/result")
+
+    half = Result.objects.get(product__name="반쪽")
+    assert (half.prices, half.total_price) == ("2.5", 3)  # 은행가 반올림이면 2
+    body = client.get("/result", {"name": "반쪽", "count": 3}).json()["content"][0]
+    assert body["totalPrice"] == 7.5
+    assert body["materials"] == [{"name": "나무", "price": 7.5, "count": 0.75}]
+
+
+def test_calculator_treats_empty_price_as_zero(client, catalog):
+    """프론트엔드 입력칸을 비우면 price가 null로 오는데, 기존 서버는 0원으로 계산했다."""
+    client.post("/result")
+    markets = [{"name": "나무", "price": None}, {"name": "못", "price": 5}, {"name": "천", "price": 7}]
+
+    response = client.post("/result/calculator", {"markets": markets}, format="json")
+
+    assert response.status_code == 201
+    results = {result["name"]: result for result in response.json()["results"]}
+    assert results["식탁"]["totalPrice"] == 20
+
+
+@pytest.mark.parametrize(
+    "markets",
+    [
+        [{"name": "나무", "price": "Infinity"}],
+        [{"name": "나무", "price": -1}],
+        [{"name": "나무", "price": 1}, {"name": "나무", "price": 2}],
+    ],
+)
+def test_calculator_rejects_invalid_prices(client, catalog, markets):
+    client.post("/result")
+
+    assert client.post("/result/calculator", {"markets": markets}, format="json").status_code == 400
+
+
+def test_recalculate_command(catalog):
+    from django.core.management import call_command
+
+    make_product("새물품", [("천", True, 1)])
+    call_command("recalculate_results")
+    assert not Result.objects.exists()
+
+    call_command("recalculate_results", "--create-missing")
+    assert Result.objects.count() == 4
+
+    Market.objects.filter(name="천").update(price=100)
+    call_command("recalculate_results")
+    assert Result.objects.get(product__name="새물품").total_price == 100
+
+
+def test_recalculate_command_fails_without_saving(catalog):
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    call_command("recalculate_results", "--create-missing")
+    Market.objects.filter(name="천").delete()
+
+    with pytest.raises(CommandError, match="시세 정보가 없는 재료"):
+        call_command("recalculate_results")
