@@ -15,6 +15,7 @@
 config/                 Django 설정, URL
 apps/common/            공통 (Nest 호환 에러 형식, 쿼리 파싱, 숫자 형식, 시퀀스 보정 마이그레이션)
 apps/products/          물품(product), 재료(material) — /product
+  recipes.py            레시피 읽기·검증 (DB에서 레시피를 읽어 계산기로 펼칠 수 있는지 확인)
 apps/markets/           시세(market) — /market
 apps/results/           계산 결과(result) — /result
   calculator.py         핵심 계산 로직 (DB와 무관한 순수 모듈)

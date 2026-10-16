@@ -7,7 +7,8 @@ from apps.common.fields import INT32_MAX
 from apps.common.numbers import round_half_up
 from apps.markets.models import Market
 from apps.products.models import Material, Product
-from apps.results.calculator import CraftingCalculator, Ingredient, RecipeError
+from apps.products.recipes import load_recipes
+from apps.results.calculator import CraftingCalculator, RecipeError
 from apps.results.models import Result
 from apps.results.presenters import present_result
 
@@ -19,12 +20,8 @@ def results_with_products():
 
 
 def build_calculator(prices=None):
-    """전체 레시피(쿼리 2번)와 시세로 계산기를 만든다. prices가 없으면 DB 시세를 쓴다."""
-    recipes = {name: [] for name in Product.objects.values_list("name", flat=True)}
-    materials = Material.objects.order_by("product_id", "id").values_list("product__name", "name", "basic", "count")
-    for product_name, name, basic, count in materials:
-        recipes[product_name].append(Ingredient(name, basic, count))
-
+    """load_recipes()로 읽은 레시피와 시세로 계산기를 만든다. prices가 None이면 DB 시세를 쓴다."""
+    recipes = load_recipes()
     if prices is None:
         prices = dict(Market.objects.values_list("name", "price"))
     return CraftingCalculator(recipes, prices)
@@ -48,16 +45,6 @@ def _apply_calculation(result, calculator):
 def _lock_prices():
     """시세 행 전체를 잠근다. 결과를 저장하는 작업끼리, 그리고 시세 수정과 순서대로 실행되게 한다."""
     list(Market.objects.select_for_update().order_by("id").values_list("id", flat=True))
-
-
-def check_recipes(product_names):
-    """저장한 레시피를 끝까지 펼칠 수 있는지 확인한다. 실패하면 400 (트랜잭션 안에서 부르면 저장도 취소)."""
-    calculator = build_calculator(prices={})
-    for name in product_names:
-        try:
-            calculator.check(name)
-        except RecipeError as error:
-            raise BadRequest(str(error)) from None
 
 
 def list_results(name=None, tool=None, category=None):

@@ -8,8 +8,8 @@ from rest_framework.exceptions import ValidationError
 
 from apps.common.exceptions import BadRequest
 from apps.products.models import Material, Product
+from apps.products.recipes import check_recipes
 from apps.products.serializers import ProductInputSerializer
-from apps.results.services import check_recipes
 
 DUPLICATE_PRODUCT_MESSAGE = "이미 추가된 물품입니다."
 
