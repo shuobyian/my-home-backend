@@ -5,6 +5,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.markets.models import Market
+from apps.products.recipes import load_recipes
 from tests.factories import make_product
 
 pytestmark = pytest.mark.django_db
@@ -96,7 +97,7 @@ def test_write_endpoints_query_count_does_not_grow(client):
 def test_materials_are_prefetched_in_id_order(client, catalog):
     # SQLite는 ORDER BY가 없어도 id 순서로 돌려주지만 Postgres는 순서를 보장하지 않아서,
     # 행동 테스트로는 이 정렬이 빠진 것을 잡을 수 없다. 그래서 SQL에 정렬이 있는지 직접 본다.
-    # POST /result/calculator는 build_calculator가 product_id, id 순으로 읽으므로 여기서 보지 않는다.
+    # 계산 경로의 레시피 정렬(product_id, id)은 test_recipes_are_loaded_in_recipe_order에서 따로 본다.
     client.post("/result")
 
     for path in ["/product", "/result"]:
@@ -105,3 +106,14 @@ def test_materials_are_prefetched_in_id_order(client, catalog):
         material_queries = [query["sql"] for query in ctx.captured_queries if 'FROM "material"' in query["sql"]]
         assert material_queries, path
         assert all('ORDER BY "material"."id" ASC' in sql for sql in material_queries), path
+
+
+def test_recipes_are_loaded_in_recipe_order(catalog):
+    # 계산기는 같은 단계 안에서 레시피 순서를 따르므로, 이 정렬이 결과 재료(names/counts/prices) 순서를 정한다.
+    # 재료 id를 섞어 넣는 행동 테스트는 SQLite가 rowid(=id) 순으로 돌려줘서 정렬이 빠져도 통과하므로 SQL을 본다.
+    with CaptureQueriesContext(connection) as ctx:
+        load_recipes()
+
+    material_queries = [query["sql"] for query in ctx.captured_queries if 'FROM "material"' in query["sql"]]
+    assert len(material_queries) == 1
+    assert 'ORDER BY "material"."product_id" ASC, "material"."id" ASC' in material_queries[0]

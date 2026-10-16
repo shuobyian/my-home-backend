@@ -4,9 +4,10 @@
 delete_products)는 스스로 atomic을 연다. 호출부가 이미 atomic이라는 이유로 지우지 않는다.
 바꾸려면 이 테스트를 약하게 고치지 말고 따로 논의한다.
 
-ATOMIC_REQUESTS가 없어서 요청은 autocommit으로 돈다. 서비스의 @transaction.atomic이 빠지면
-select_for_update가 TransactionManagementError를 내서 500이 되므로 성공 상태 코드 단언이 그 회귀를 잡는다.
-SQL 단언은 잠금 쿼리가 실제로 나가는지, 그리고 읽기·쓰기보다 먼저 나가는지를 본다.
+ATOMIC_REQUESTS가 없어서 요청은 autocommit으로 돈다. 서비스의 @transaction.atomic이 빠지면 select_for_update가
+TransactionManagementError를 낸다(운영에서는 500). 테스트 클라이언트가 이 예외를 그대로 올리므로 테스트가 실패한다.
+recalculate_results는 호출부(update_markets, 관리 명령)가 모두 atomic이라 API로는 잡히지 않아서 직접 부른다.
+SQL 단언은 잠금 쿼리가 실제로 나가는지, 그리고 시세는 읽기·쓰기보다, 물품은 쓰기보다 먼저 나가는지를 본다.
 SQLite는 FOR UPDATE를 만들지 않으므로 Postgres(TEST_DATABASE_URL)에서만 돈다.
 """
 
@@ -15,6 +16,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.markets.models import Market
+from apps.results import services as result_services
 
 pytestmark = [
     pytest.mark.skipif(connection.vendor != "postgresql", reason="Postgres 전용"),
@@ -55,7 +57,7 @@ def test_result_creation_locks_prices_before_reading_them(client, catalog):
 
     assert response.status_code == 201
     locks = positions(sqls, 'FROM "market"', "FOR UPDATE")
-    # 시세 조회(build_calculator). Postgres에서는 SELECT "market"."name" AS "name", "market"."price" AS "price" 꼴이다.
+    # 시세 조회(_build_calculator). Postgres에서는 SELECT "market"."name" AS "name", "market"."price" AS "price" 꼴이다.
     price_reads = positions(sqls, 'SELECT "market"."name"', '"market"."price"', 'FROM "market"')
     inserts = positions(sqls, 'INSERT INTO "result"')
     assert locks
@@ -91,4 +93,26 @@ def test_product_writes_lock_rows(client, catalog, send):
     response, sqls = capture(lambda: send(client, catalog))
 
     assert response.status_code == 200
-    assert positions(sqls, 'FROM "product"', "FOR UPDATE")
+    locks = positions(sqls, 'FROM "product"', "FOR UPDATE")
+    # 수정은 레시피 검증 SELECT가 잠금 뒤에도 나가므로 읽기는 보지 않고 쓰기만 기준으로 둔다.
+    writes = positions(sqls, 'UPDATE "product"') + positions(sqls, 'DELETE FROM "material"')
+    writes += positions(sqls, 'DELETE FROM "product"')
+    assert locks
+    assert writes
+    assert locks[0] < min(writes)
+
+
+def test_recalculate_results_opens_its_own_transaction(client, catalog):
+    # 결과 행이 없으면 bulk_update가 UPDATE를 내지 않으므로 먼저 만든다.
+    assert client.post("/result").status_code == 201
+
+    _, sqls = capture(result_services.recalculate_results)
+
+    locks = positions(sqls, 'FROM "market"', "FOR UPDATE")
+    price_reads = positions(sqls, 'SELECT "market"."name"', '"market"."price"', 'FROM "market"')
+    writes = positions(sqls, 'UPDATE "result"')
+    assert locks
+    assert price_reads
+    assert writes
+    assert locks[0] < price_reads[0]
+    assert locks[0] < writes[0]
