@@ -1,5 +1,4 @@
-from django.http import HttpResponse
-from rest_framework import serializers, status
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -12,19 +11,6 @@ from apps.products.serializers import (
     ProductSerializer,
     ProductUpdateSerializer,
 )
-
-
-class LoginInputSerializer(serializers.Serializer):
-    # 비밀번호가 없어도 기존 서버처럼 '비밀번호가 올바르지 않습니다.'로 응답한다.
-    password = serializers.CharField(trim_whitespace=False, allow_blank=True, default="")
-
-
-class LoginView(APIView):
-    def post(self, request):
-        serializer = LoginInputSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        services.login(serializer.validated_data["password"])
-        return HttpResponse("", status=status.HTTP_201_CREATED)
 
 
 class ProductView(APIView):

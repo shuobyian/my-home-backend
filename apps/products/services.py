@@ -1,7 +1,5 @@
-import hmac
 from collections import Counter
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from rest_framework.exceptions import ValidationError
@@ -16,13 +14,6 @@ DUPLICATE_PRODUCT_MESSAGE = "이미 추가된 물품입니다."
 
 def products_with_materials():
     return Product.objects.prefetch_related(Prefetch("materials", queryset=Material.objects.order_by("id")))
-
-
-def login(password):
-    expected = settings.LOGIN_PASSWORD
-    # 비밀번호가 설정되지 않은 서버에서는 로그인을 허용하지 않는다.
-    if not expected or not hmac.compare_digest(str(password).encode(), expected.encode()):
-        raise BadRequest("비밀번호가 올바르지 않습니다.")
 
 
 def list_products(name=None):
