@@ -39,12 +39,22 @@ python manage.py runserver 8123
 ## 테스트
 
 ```bash
-pytest                                                        # SQLite 메모리 DB
-TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres pytest   # Postgres
+pytest                                  # SQLite 메모리 DB
 ruff check . && ruff format --check .
 ```
 
-테스트 설정(`config/test_settings.py`)은 `.env`의 `POSTGRES_*` 값을 쓰지 않는다.
+Postgres로 돌릴 때는 개발 DB(docker-compose, 실제 데이터가 있음) 대신 별도 포트의 PostgreSQL 16 임시 컨테이너를 쓴다.
+
+```bash
+docker run --rm -d --name myhome-test-pg -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine
+until docker exec myhome-test-pg pg_isready -U postgres; do sleep 1; done
+TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pytest
+docker stop myhome-test-pg
+```
+
+잠금(select_for_update)과 트랜잭션 테스트(`tests/test_postgres_locking.py`)는 Postgres에서만 돈다. 리팩터링 전후로 한 번씩 돌린다.
+
+테스트 설정(`config/test_settings.py`)은 `.env`의 `POSTGRES_*` 값을 쓰지 않는다. 운영 `.env` 값으로 테스트하지 않는다.
 
 ## 기존 NestJS 서버에서 전환하기
 
