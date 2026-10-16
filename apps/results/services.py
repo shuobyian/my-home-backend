@@ -11,35 +11,6 @@ from apps.results.calculator import CraftingCalculator, RecipeError
 from apps.results.models import Result
 
 
-def _build_calculator(prices=None):
-    """load_recipes()로 읽은 레시피와 시세로 계산기를 만든다. prices가 None이면 DB 시세를 쓴다."""
-    recipes = load_recipes()
-    if prices is None:
-        prices = dict(Market.objects.values_list("name", "price"))
-    return CraftingCalculator(recipes, prices)
-
-
-def _calculate_or_400(calculator, product_name):
-    """계산기로 비용을 계산하고, RecipeError는 400(BadRequest)으로 바꾼다."""
-    try:
-        return calculator.calculate(product_name)
-    except RecipeError as error:
-        raise BadRequest(str(error)) from None
-
-
-def _apply_calculation(result, calculator):
-    sheet = _calculate_or_400(calculator, result.product.name)
-    if abs(round_half_up(sheet.total_price)) > INT32_MAX:
-        # totalPrice 컬럼이 Postgres integer라서 저장할 수 없다 (미리 계산은 저장하지 않으므로 제한 없음).
-        raise BadRequest(f"합계 금액이 너무 커서 저장할 수 없습니다. ({result.product.name})")
-    result.apply_cost_sheet(sheet)
-
-
-def _lock_prices():
-    """시세 행 전체를 잠근다. 결과를 저장하는 작업끼리, 그리고 시세 수정과 순서대로 실행되게 한다."""
-    list(Market.objects.lock_all().values_list("id", flat=True))
-
-
 def list_results(name=None, tool=None, category=None):
     queryset = Result.objects.with_product().in_display_order()
     if name:
@@ -97,3 +68,32 @@ def recalculate_results():
         _apply_calculation(result, calculator)
         result.updated_at = now
     Result.objects.bulk_update(results, ["names", "counts", "prices", "total_price", "updated_at"], batch_size=500)
+
+
+def _build_calculator(prices=None):
+    """load_recipes()로 읽은 레시피와 시세로 계산기를 만든다. prices가 None이면 DB 시세를 쓴다."""
+    recipes = load_recipes()
+    if prices is None:
+        prices = dict(Market.objects.values_list("name", "price"))
+    return CraftingCalculator(recipes, prices)
+
+
+def _calculate_or_400(calculator, product_name):
+    """계산기로 비용을 계산하고, RecipeError는 400(BadRequest)으로 바꾼다."""
+    try:
+        return calculator.calculate(product_name)
+    except RecipeError as error:
+        raise BadRequest(str(error)) from None
+
+
+def _apply_calculation(result, calculator):
+    sheet = _calculate_or_400(calculator, result.product.name)
+    if abs(round_half_up(sheet.total_price)) > INT32_MAX:
+        # totalPrice 컬럼이 Postgres integer라서 저장할 수 없다 (미리 계산은 저장하지 않으므로 제한 없음).
+        raise BadRequest(f"합계 금액이 너무 커서 저장할 수 없습니다. ({result.product.name})")
+    result.apply_cost_sheet(sheet)
+
+
+def _lock_prices():
+    """시세 행 전체를 잠근다. 결과를 저장하는 작업끼리, 그리고 시세 수정과 순서대로 실행되게 한다."""
+    list(Market.objects.lock_all().values_list("id", flat=True))
