@@ -6,7 +6,8 @@ from apps.common.params import query_int, query_number
 from apps.experiences import services
 from apps.experiences.serializers import ExperienceSerializer
 
-# 생산 경험치 증가율(%) 상한
+# productionPercent(생산 경험치 증가율, %) 쿼리 기본값과 상한
+DEFAULT_PRODUCTION_PERCENT = 60
 MAX_PRODUCTION_PERCENT = 10_000
 
 
@@ -18,14 +19,14 @@ class ExperienceView(APIView):
 class WalnutView(APIView):
     def get(self, request):
         return Response(
-            services.walnut(
+            services.calculate_walnut(
                 present_level=query_int(request, "presentLevel", required=True, max_value=INT32_MAX),
                 present_experience=query_int(request, "presentExperience", default=0, min_value=0, max_value=INT32_MAX),
                 objective_level=query_int(request, "objectiveLevel", max_value=INT32_MAX),
                 production_percent=query_number(
                     request,
                     "productionPercent",
-                    default=services.DEFAULT_PRODUCTION_PERCENT,
+                    default=DEFAULT_PRODUCTION_PERCENT,
                     min_value=0,
                     max_value=MAX_PRODUCTION_PERCENT,
                 ),
