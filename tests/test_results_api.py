@@ -1,4 +1,8 @@
+from io import StringIO
+
 import pytest
+from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from apps.markets.models import Market
 from apps.results.models import Result
@@ -205,3 +209,72 @@ def test_result_total_over_integer_column_is_rejected(client, catalog):
     assert response.status_code == 400
     assert response.json()["message"] == "합계 금액이 너무 커서 저장할 수 없습니다. (판자)"
     assert not Result.objects.exists()
+
+
+def test_list_and_calculator_order_same_level_by_name(client, catalog):
+    # id 순서(나 → 가)와 이름 순서(가 → 나)가 반대가 되게 만든다
+    make_product("나", [("나무", True, 1)], level=1)
+    make_product("가", [("나무", True, 1)], level=1)
+    client.post("/result")
+    markets = [{"name": "나무", "price": 1}, {"name": "못", "price": 1}, {"name": "천", "price": 1}]
+
+    listed = [result["name"] for result in client.get("/result").json()["content"]]
+    previewed = client.post("/result/calculator", {"markets": markets}, format="json").json()["results"]
+
+    assert listed == ["가", "나", "판자", "의자", "식탁"]
+    assert [result["name"] for result in previewed] == ["가", "나", "판자", "의자", "식탁"]
+
+
+def test_calculator_missing_price_message_names_first_failing_product(client, catalog):
+    """정렬 순서(레벨·이름)와 첫 실패 물품에 묶인 문구다. 깨지면 정렬이나 순회가 바뀐 것이다."""
+    client.post("/result")
+
+    response = client.post("/result/calculator", {"markets": [{"name": "나무", "price": 1}]}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "시세 정보가 없는 재료가 있습니다. (의자: 천)"
+
+
+def test_create_results_invalid_sub_material_message(client, catalog):
+    make_product("불량품", [("없는물품", False, 1)])
+
+    response = client.post("/result")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "하위 재료에 잘못된 물품명이 있습니다. (불량품: 없는물품)"
+
+
+def test_create_missing_results_only_adds_missing(client, catalog):
+    client.post("/result")
+    existing = set(Result.objects.values_list("product_id", "id"))
+    extra = make_product("추가", [("나무", True, 1)])
+
+    response = client.post("/result")
+
+    assert response.status_code == 201
+    assert [result["product_id"] for result in response.json()] == [extra.id]
+    assert existing <= set(Result.objects.values_list("product_id", "id"))
+
+
+def test_recalculate_command_rolls_back_when_create_missing_fails(catalog):
+    call_command("recalculate_results", "--create-missing", stdout=StringIO())
+    Market.objects.filter(name="나무").update(price=1000)
+    make_product("불량품", [("없는물품", False, 1)])
+
+    with pytest.raises(CommandError) as error:
+        call_command("recalculate_results", "--create-missing", stdout=StringIO())
+
+    assert str(error.value) == (
+        "재계산하지 못해 아무것도 저장하지 않았습니다. 하위 재료에 잘못된 물품명이 있습니다. (불량품: 없는물품)"
+    )
+    # 먼저 실행된 재계산(나무 1000원)까지 함께 취소됐다
+    assert dict(Result.objects.values_list("product__name", "total_price")) == {"판자": 30, "식탁": 80, "의자": 44}
+
+
+def test_recalculate_command_create_missing_with_nothing_missing(catalog):
+    call_command("recalculate_results", "--create-missing", stdout=StringIO())
+    out = StringIO()
+
+    call_command("recalculate_results", "--create-missing", stdout=out, no_color=True)
+
+    assert out.getvalue() == "결과 3건을 재계산하고 0건을 새로 만들었습니다.\n"
