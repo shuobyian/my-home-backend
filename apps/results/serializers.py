@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.common.dates import js_datetime
-from apps.common.fields import INT32_MAX, FiniteFloatField
+from apps.common.fields import FiniteFloatField
 from apps.results.models import Result
 
 
@@ -27,7 +27,7 @@ class ResultSerializer(serializers.ModelSerializer):
 class MarketPriceSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     # 프론트엔드 입력칸을 비우면 null이 오는데, 기존 서버는 이를 0원으로 계산했다.
-    price = FiniteFloatField(min_value=0, max_value=INT32_MAX, allow_null=True)
+    price = FiniteFloatField(min_value=0, allow_null=True)
 
     def validate_price(self, value):
         return 0 if value is None else value

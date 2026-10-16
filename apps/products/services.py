@@ -4,9 +4,11 @@ from collections import Counter
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
+from rest_framework.exceptions import ValidationError
 
 from apps.common.exceptions import BadRequest
 from apps.products.models import Material, Product
+from apps.products.serializers import ProductInputSerializer
 from apps.results.services import check_recipes
 
 DUPLICATE_PRODUCT_MESSAGE = "이미 추가된 물품입니다."
@@ -42,23 +44,29 @@ def create_product(data):
 
 
 @transaction.atomic
-def create_products(items):
-    """업로드한 물품 중 아직 없는 물품만 재료와 함께 추가한다."""
-    duplicated = sorted(name for name, count in Counter(item["name"] for item in items).items() if count > 1)
+def create_products(rows):
+    """업로드한 물품 중 아직 없는 물품만 재료와 함께 추가한다.
+
+    프론트엔드는 새 물품만이 아니라 로컬 카탈로그 전체를 보낸다. 이미 있는 물품은 건너뛰므로 검증도 하지 않는다
+    (저장하지 않을 오래된 행 하나 때문에 업로드 전체가 막히지 않게).
+    """
+    names = [_row_name(row) for row in rows]
+    duplicated = sorted(name for name, count in Counter(names).items() if name and count > 1)
     if duplicated:
         raise BadRequest(f"업로드 목록에 중복된 물품명이 있습니다. ({', '.join(duplicated)})")
 
-    existing = set(Product.objects.filter(name__in=[item["name"] for item in items]).values_list("name", flat=True))
-    new_items = [item for item in items if item["name"] not in existing]
-    if not new_items:
+    existing = set(Product.objects.filter(name__in=[name for name in names if name]).values_list("name", flat=True))
+    new_rows = [(index, row) for index, (row, name) in enumerate(zip(rows, names, strict=True)) if name not in existing]
+    if not new_rows:
         raise BadRequest("새로 추가할 물품이 없습니다.")
+    items = _validate_new_rows(new_rows)
 
     products = _save_new_products(
-        [Product(**{key: value for key, value in item.items() if key != "materials"}) for item in new_items]
+        [Product(**{key: value for key, value in item.items() if key != "materials"}) for item in items]
     )
     Material.objects.bulk_create(
         Material(product=product, **material)
-        for product, item in zip(products, new_items, strict=True)
+        for product, item in zip(products, items, strict=True)
         for material in item["materials"]
     )
     check_recipes([product.name for product in products])
@@ -107,6 +115,25 @@ def delete_products(ids):
     # 재료(material)와 결과(result)는 CASCADE로 함께 지워진다.
     Product.objects.filter(pk__in=products).delete()
     return [{"raw": [], "affected": 1 if product_id in products else 0} for product_id in ids]
+
+
+def _row_name(row):
+    name = row.get("name")
+    return name.strip() if isinstance(name, str) else None
+
+
+def _validate_new_rows(indexed_rows):
+    items, errors = [], {}
+    for index, row in indexed_rows:
+        serializer = ProductInputSerializer(data=row)
+        if serializer.is_valid():
+            items.append(serializer.validated_data)
+        else:
+            errors[index] = serializer.errors
+    if errors:
+        # 에러 위치는 업로드 목록의 원래 순서 기준 (예: products.3.count)
+        raise ValidationError({"products": errors})
+    return items
 
 
 def _save_new_products(products):

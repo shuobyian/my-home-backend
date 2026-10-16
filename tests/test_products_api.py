@@ -277,3 +277,55 @@ def test_health(client):
     response = client.get("/")
     assert response.status_code == 200
     assert response.content == b"Hello World!"
+
+
+def test_tool_values_match_frontend():
+    """프론트엔드 src/apis/type/Tool.ts, Category.ts와 같은 값이어야 한다."""
+    from apps.products.models import Category, Tool
+
+    assert Tool.values == [
+        "WOOD",
+        "FIRE_PIT",
+        "SEWING_MACHINE",
+        "LEATHER",
+        "BRAZIER",
+        "POTTERY_WHEEL",
+        "ALCHEMY_KETTLE",
+        "MIMI",
+    ]
+    assert Category.values == ["NORMAL", "EVENT"]
+
+
+def test_mimi_tool_is_accepted(client, catalog):
+    created = client.post("/product", product_payload("미미요리", tool="MIMI"), format="json")
+    assert created.status_code == 201
+
+    product_id = created.json()["id"]
+    edited = client.put("/product", {"id": product_id, "tool": "MIMI", "materials": []}, format="json")
+    assert edited.status_code == 200
+
+    client.post("/result")
+    filtered = client.get("/result", {"tool": "MIMI"}).json()["content"]
+    assert [result["name"] for result in filtered] == ["미미요리"]
+
+
+def test_bulk_create_ignores_invalid_rows_of_existing_products(client, catalog):
+    """프론트엔드는 로컬 카탈로그 전체를 보낸다. 건너뛸 기존 물품 행은 검증하지 않는다."""
+    stale = product_payload(" 판자", materials=[{"name": "나무", "basic": True, "count": 0}], tool="")
+    payload = {"products": [stale, product_payload("새물품")]}
+
+    response = client.post("/product/all", payload, format="json")
+
+    assert response.status_code == 201
+    assert [product["name"] for product in response.json()] == ["새물품"]
+
+
+def test_bulk_create_reports_error_position_in_original_list(client, catalog):
+    broken = product_payload("새물품", materials=[{"name": "나무", "basic": True, "count": 0}])
+    payload = {"products": [product_payload("판자"), product_payload("좋은물품"), broken]}
+
+    response = client.post("/product/all", payload, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"].startswith("products.2.materials.0.count:")
+    assert not Product.objects.filter(name="좋은물품").exists()

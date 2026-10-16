@@ -184,3 +184,24 @@ def test_recalculate_command_fails_without_saving(catalog):
 
     with pytest.raises(CommandError, match="시세 정보가 없는 재료"):
         call_command("recalculate_results")
+
+
+def test_calculator_preview_has_no_storage_limit(client, catalog):
+    client.post("/result")
+    markets = [{"name": "나무", "price": 10**12}, {"name": "못", "price": 5}, {"name": "천", "price": 7}]
+
+    response = client.post("/result/calculator", {"markets": markets}, format="json")
+
+    assert response.status_code == 201
+    results = {result["name"]: result for result in response.json()["results"]}
+    assert results["식탁"]["totalPrice"] == 6 * 10**12 + 20
+
+
+def test_result_total_over_integer_column_is_rejected(client, catalog):
+    Market.objects.filter(name="나무").update(price=2**31 - 1)
+
+    response = client.post("/result")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "합계 금액이 너무 커서 저장할 수 없습니다. (판자)"
+    assert not Result.objects.exists()

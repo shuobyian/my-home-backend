@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from apps.common.exceptions import BadRequest
 from apps.common.fields import INT32_MAX
+from apps.common.numbers import round_half_up
 from apps.markets.models import Market
 from apps.products.models import Material, Product
 from apps.results.calculator import CraftingCalculator, Ingredient, RecipeError
@@ -31,12 +32,22 @@ def build_calculator(prices=None):
 
 def calculate(calculator, product_name):
     try:
-        sheet = calculator.calculate(product_name)
+        return calculator.calculate(product_name)
     except RecipeError as error:
         raise BadRequest(str(error)) from None
-    if abs(sheet.total_price) > INT32_MAX:
-        raise BadRequest(f"합계 금액이 너무 큽니다. ({product_name})")
-    return sheet
+
+
+def _apply_calculation(result, calculator):
+    sheet = calculate(calculator, result.product.name)
+    if abs(round_half_up(sheet.total_price)) > INT32_MAX:
+        # totalPrice 컬럼이 Postgres integer라서 저장할 수 없다 (미리 계산은 저장하지 않으므로 제한 없음).
+        raise BadRequest(f"합계 금액이 너무 커서 저장할 수 없습니다. ({result.product.name})")
+    result.apply_cost_sheet(sheet)
+
+
+def _lock_prices():
+    """시세 행 전체를 잠근다. 결과를 저장하는 작업끼리, 그리고 시세 수정과 순서대로 실행되게 한다."""
+    list(Market.objects.select_for_update().order_by("id").values_list("id", flat=True))
 
 
 def check_recipes(product_names):
@@ -63,6 +74,7 @@ def list_results(name=None, tool=None, category=None):
 @transaction.atomic
 def create_missing_results():
     """결과가 없는 물품의 결과를 현재 시세로 계산해 저장한다."""
+    _lock_prices()
     products = list(Product.objects.filter(result__isnull=True).order_by("id"))
     if not products:
         raise BadRequest("추가할 결과가 없습니다.")
@@ -71,7 +83,7 @@ def create_missing_results():
     results = []
     for product in products:
         result = Result(product=product)
-        result.apply_cost_sheet(calculate(calculator, product.name))
+        _apply_calculation(result, calculator)
         results.append(result)
     try:
         with transaction.atomic():
@@ -94,12 +106,14 @@ def preview_results(prices):
     ]
 
 
+@transaction.atomic
 def recalculate_results():
     """저장된 모든 결과를 현재 DB 시세로 다시 계산해 저장한다 (시세 수정 시 호출)."""
+    _lock_prices()
     calculator = build_calculator()
     results = list(Result.objects.select_related("product"))
     now = timezone.now()
     for result in results:
-        result.apply_cost_sheet(calculate(calculator, result.product.name))
+        _apply_calculation(result, calculator)
         result.updated_at = now
     Result.objects.bulk_update(results, ["names", "counts", "prices", "total_price", "updated_at"], batch_size=500)

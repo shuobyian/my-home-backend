@@ -11,7 +11,7 @@ def validate_csv_safe_name(value):
     return value
 
 
-# 재료 수량 상한. 하위 물품을 거치며 곱해져도 합계가 정수 컬럼 범위 안에 들도록 넉넉한 현실값으로 제한한다.
+# 재료 수량 상한 (현실적인 값만 받는다). 저장할 합계가 정수 컬럼 범위를 넘으면 결과 저장 시 따로 400으로 막는다.
 MAX_MATERIAL_COUNT = 1_000_000
 
 
@@ -48,7 +48,9 @@ class ProductUpdateSerializer(serializers.Serializer):
 
 
 class ProductBulkCreateSerializer(serializers.Serializer):
-    products = ProductInputSerializer(many=True)
+    """POST /product/all 본문. 각 물품은 services.create_products에서 새로 추가할 것만 검증한다."""
+
+    products = serializers.ListField(child=serializers.DictField())
 
 
 class ProductIdsSerializer(serializers.Serializer):
