@@ -1,20 +1,13 @@
-from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.fields import INT32_MAX
 from apps.common.params import query_int, query_number
 from apps.experiences import services
-from apps.experiences.models import Experience
+from apps.experiences.serializers import ExperienceSerializer
 
 # 생산 경험치 증가율(%) 상한
 MAX_PRODUCTION_PERCENT = 10_000
-
-
-class ExperienceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Experience
-        fields = ["id", "level", "amount"]
 
 
 class ExperienceView(APIView):
