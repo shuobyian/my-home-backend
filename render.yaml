@@ -1,0 +1,39 @@
+# Render Blueprint: 대시보드의 New > Blueprint에서 이 저장소를 고르면 아래 서비스가 만들어진다.
+# DB는 Render 무료 Postgres(30일 후 만료) 대신 Neon을 쓴다. sync: false인 값은 처음 만들 때 직접 입력한다.
+services:
+  - type: web
+    name: my-home-backend
+    runtime: docker
+    plan: free
+    # 한국에서 가장 가까운 리전
+    region: singapore
+    branch: main
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: "8123"
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "*"
+      # 무료 인스턴스 메모리(512MB)에 맞춘다
+      - key: GUNICORN_WORKERS
+        value: "2"
+      # Neon 대시보드의 Connection string에서 옮겨 적는다 (pooler가 아닌 direct 주소)
+      - key: POSTGRES_HOST
+        sync: false
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_NAME
+        sync: false
+      - key: POSTGRES_SSLMODE
+        value: require
+      # /product/login 관리자 비밀번호
+      - key: PASSWORD
+        sync: false

@@ -57,6 +57,47 @@ docker stop myhome-test-pg
 
 테스트 설정(`config/test_settings.py`)은 `.env`의 `POSTGRES_*` 값을 쓰지 않는다. 운영 `.env` 값으로 테스트하지 않는다.
 
+## 무료 배포 (Render + Neon)
+
+웹 서버는 Render 무료 Web Service(Docker), DB는 Neon 무료 Postgres를 쓴다. 프론트엔드는 Cloudflare Pages에 올린다(my-home-frontend README 참고).
+
+- Render 무료 인스턴스는 15분 동안 요청이 없으면 잠들고, 다음 요청 때 깨어나는 데 1분 정도 걸린다.
+- Neon 무료 플랜은 저장 공간 0.5GB, 월 100 compute-hours이며, 쉬다가 첫 접속 때 몇 초 콜드스타트가 있다.
+- 무료 플랜 조건은 자주 바뀌므로 각 서비스의 요금 페이지를 확인한다.
+
+### 1. Neon DB 만들기
+
+1. [Neon](https://neon.com)에서 프로젝트를 만든다. 리전은 Asia Pacific(Singapore)으로 Render와 맞춘다. Postgres 버전은 16 이상.
+2. Connection string에서 host, user, password, database를 확인한다. **Connection pooling을 끈 direct 주소**(`-pooler`가 없는 host)를 쓴다.
+   Django가 연결을 유지(`CONN_MAX_AGE`)하고 `select_for_update` 트랜잭션을 쓰므로 PgBouncer를 거치지 않는다.
+
+### 2. 기존 데이터 옮기기
+
+기존 서버(EC2)의 DB를 덤프해서 Neon에 복원한다. 로컬의 `pg_restore`는 Neon과 같거나 더 높은 버전이어야 한다.
+
+```bash
+# 기존 서버에서
+docker compose exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" "$POSTGRES_NAME"' > myhome.dump
+
+# Neon으로 복원 (<...>는 Neon 접속 정보)
+pg_restore --no-owner --no-acl -d "postgresql://<user>:<password>@<host>/<database>?sslmode=require" myhome.dump
+```
+
+덤프에는 `django_migrations` 테이블도 들어 있으므로 복원 후 컨테이너가 시작할 때 실행하는 `migrate --fake-initial`은 새로 적용할 것만 적용한다.
+데이터 없이 새로 시작한다면 복원을 건너뛴다. 빈 DB에는 `migrate`가 테이블을 만든다.
+
+### 3. Render 웹 서버 만들기
+
+1. Render 대시보드에서 **New > Blueprint**를 누르고 이 저장소를 고른다. `render.yaml`대로 서비스가 만들어진다.
+2. 입력하라고 나오는 값(`POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_NAME`, `PASSWORD`)을 채운다.
+   `DJANGO_SECRET_KEY`는 Render가 만들어 준다.
+3. 배포가 끝나면 `https://<서비스 이름>.onrender.com/`에서 `Hello World!`가 나오는지 확인한다.
+4. 데이터를 옮겼다면 Render의 Shell 탭(무료 플랜에서 안 되면 로컬에서 Neon 접속 정보로)에서 `python manage.py recalculate_results --create-missing`을 한 번 실행한다.
+5. 프론트엔드(Cloudflare Pages)의 `VITE_API_BASE_URL`을 이 주소로 설정한다.
+
+`.env`는 git에 없으므로 Render 이미지에는 들어가지 않는다. 설정은 모두 Render 환경변수로 한다.
+`main`에 푸시하면 Render가 자동으로 다시 배포한다.
+
 ## 기존 NestJS 서버에서 전환하기
 
 ### 0. 전환 전 점검 (기존 DB에서 실행)
