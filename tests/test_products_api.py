@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from apps.products.models import Material, Product
+from apps.products.models import Category, Material, Product, Tool
 from apps.results.models import Result
 
 pytestmark = pytest.mark.django_db
@@ -141,6 +141,7 @@ def test_update_product_replaces_materials(client, catalog):
 def test_update_unknown_product(client, db):
     response = client.put("/product", {"id": 999, "materials": []}, format="json")
     assert response.status_code == 400
+    assert response.json()["message"] == "존재하지 않는 물품입니다."
 
 
 def test_delete_products_cascades(client, catalog):
@@ -273,6 +274,36 @@ def test_unknown_route_uses_nest_error_format(client, settings):
     assert response.json() == {"statusCode": 404, "message": "Cannot GET /nothing", "error": "Not Found"}
 
 
+def test_product_name_search_is_literal(client, catalog):
+    # catalog에는 %나 _가 들어간 이름이 없다는 전제다
+    assert client.get("/product", {"name": "_"}).json()["content"] == []
+
+
+# djangorestframework==3.16.1 한국어 번역에 묶인 문구다.
+# 버전을 올릴 때 깨지면 회귀로 보고, 테스트를 고쳐 맞추지 않는다.
+def test_method_not_allowed(client, db):
+    response = client.patch("/product", {}, format="json")
+
+    assert response.status_code == 405
+    assert response.json()["message"] == '메서드 "PATCH"는 허용되지 않습니다.'
+    assert response.json()["error"] == "Method Not Allowed"
+
+
+def test_form_body_is_unsupported(client, db):
+    response = client.post("/product", "name=a", content_type="application/x-www-form-urlencoded")
+
+    assert response.status_code == 415
+    # message에는 요청한 미디어 타입이 들어가므로 비교하지 않는다
+    assert response.json()["error"] == "Unsupported Media Type"
+
+
+def test_malformed_json(client, db):
+    response = client.generic("POST", "/product", "{bad", content_type="application/json")
+
+    assert response.status_code == 400
+    assert response.json()["message"].startswith("JSON parse error - ")
+
+
 def test_health(client):
     response = client.get("/")
     assert response.status_code == 200
@@ -281,8 +312,6 @@ def test_health(client):
 
 def test_tool_values_match_frontend():
     """프론트엔드 src/apis/type/Tool.ts, Category.ts와 같은 값이어야 한다."""
-    from apps.products.models import Category, Tool
-
     assert Tool.values == [
         "WOOD",
         "FIRE_PIT",
@@ -329,3 +358,138 @@ def test_bulk_create_reports_error_position_in_original_list(client, catalog):
     assert response.status_code == 400
     assert response.json()["message"].startswith("products.2.materials.0.count:")
     assert not Product.objects.filter(name="좋은물품").exists()
+
+
+def test_update_to_existing_name_is_rejected(client, catalog):
+    plank = catalog["판자"]
+    payload = {"id": plank.id, "name": "식탁", "materials": []}
+
+    response = client.put("/product", payload, format="json")
+
+    assert response.json() == {"statusCode": 400, "message": "이미 추가된 물품입니다.", "error": "Bad Request"}
+    plank.refresh_from_db()
+    assert plank.name == "판자"
+    assert list(plank.materials.values_list("name", flat=True)) == ["나무"]
+
+
+def test_update_with_own_name_is_allowed(client, catalog):
+    plank = catalog["판자"]
+    payload = {"id": plank.id, "name": "판자", "materials": [{"name": "나무", "basic": True, "count": 3}]}
+
+    assert client.put("/product", payload, format="json").status_code == 200
+
+
+def test_rename_rolls_back_when_recipe_check_fails(client, catalog):
+    plank = catalog["판자"]
+    payload = {"id": plank.id, "name": "널빤지", "materials": [{"name": "식탁", "basic": False, "count": 1}]}
+
+    response = client.put("/product", payload, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "재료 구성에 순환 참조가 있습니다. (널빤지 → 식탁 → 널빤지)"
+    # 이름 변경은 basic=False인 '판자' 재료 전체를 바꾸므로, 그 재료를 쓰는 식탁과 의자까지 되돌려졌는지 본다.
+    assert set(Product.objects.values_list("name", flat=True)) == {"판자", "식탁", "의자"}
+    assert list(catalog["식탁"].materials.order_by("id").values_list("name", flat=True)) == ["판자", "못"]
+    assert list(catalog["의자"].materials.order_by("id").values_list("name", flat=True)) == ["판자", "천"]
+    assert list(plank.materials.values_list("name", flat=True)) == ["나무"]
+
+
+def test_bulk_create_rolls_back_when_sub_product_unknown(client, catalog):
+    before = Material.objects.count()
+    payload = {"products": [product_payload("C", materials=[{"name": "없음", "basic": False, "count": 1}])]}
+
+    response = client.post("/product/all", payload, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "하위 재료에 잘못된 물품명이 있습니다. (C: 없음)"
+    assert not Product.objects.filter(name="C").exists()
+    assert Material.objects.count() == before
+
+
+def test_bulk_create_duplicate_names_message_is_sorted_and_stripped(client, db):
+    payload = {"products": [product_payload(name) for name in ["B", "A", " B", "A"]]}
+
+    response = client.post("/product/all", payload, format="json")
+
+    assert response.json()["message"] == "업로드 목록에 중복된 물품명이 있습니다. (A, B)"
+
+
+def test_create_product_defaults_category_to_normal(client, db):
+    payload = product_payload()
+    del payload["category"]
+
+    response = client.post("/product", payload, format="json")
+
+    assert response.status_code == 201
+    assert response.json()["category"] == "NORMAL"
+    assert Product.objects.get(name="새물품").category == "NORMAL"
+
+
+def test_delete_with_empty_and_repeated_ids(client, catalog):
+    empty = client.delete("/product", [], format="json")
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    table_id = catalog["식탁"].id
+    repeated = client.delete("/product", [table_id, table_id], format="json")
+    assert repeated.json() == [{"raw": [], "affected": 1}, {"raw": [], "affected": 1}]
+
+
+# djangorestframework==3.16.1 한국어 번역과 LANGUAGE_CODE=ko-kr에 의존한다.
+# 깨지면 프론트엔드에 보이는 문구가 바뀐 것이므로 기대값이 아니라 구현을 맞춘다.
+def test_missing_fields_message_format(client, db):
+    response = client.post("/product", {}, format="json")
+
+    assert response.json()["message"] == (
+        "name: 이 필드는 필수 항목입니다., level: 이 필드는 필수 항목입니다., "
+        "craftingPrice: 이 필드는 필수 항목입니다., tool: 이 필드는 필수 항목입니다., "
+        "materials: 이 필드는 필수 항목입니다."
+    )
+
+
+# djangorestframework==3.16.1 한국어 번역과 LANGUAGE_CODE=ko-kr에 의존한다.
+# 깨지면 프론트엔드에 보이는 문구가 바뀐 것이므로 기대값이 아니라 구현을 맞춘다.
+def test_name_validation_message_order(client, db):
+    payload = product_payload(name="a,b" + "x" * 300, materials=[{"name": "c,d", "basic": True, "count": 1}])
+
+    response = client.post("/product", payload, format="json")
+
+    assert response.json()["message"] == (
+        "name: 이름에 콤마(,)를 넣을 수 없습니다., name: 이 필드의 글자 수가 255 이하인지 확인하세요., "
+        "materials.0.name: 이름에 콤마(,)를 넣을 수 없습니다."
+    )
+
+
+# djangorestframework==3.16.1 한국어 번역과 LANGUAGE_CODE=ko-kr에 의존한다.
+# 깨지면 프론트엔드에 보이는 문구가 바뀐 것이므로 기대값이 아니라 구현을 맞춘다.
+def test_update_name_validation_message_order(client, catalog):
+    payload = {"id": catalog["판자"].id, "name": "a,b" + "x" * 300, "materials": []}
+
+    response = client.put("/product", payload, format="json")
+
+    assert response.json()["message"] == (
+        "name: 이름에 콤마(,)를 넣을 수 없습니다., name: 이 필드의 글자 수가 255 이하인지 확인하세요."
+    )
+
+
+# djangorestframework==3.16.1 한국어 번역과 LANGUAGE_CODE=ko-kr에 의존한다.
+# 깨지면 프론트엔드에 보이는 문구가 바뀐 것이므로 기대값이 아니라 구현을 맞춘다.
+def test_update_validation_message_order(client, db):
+    payload = {"id": "x", "name": "a,b", "category": "Z"}
+
+    response = client.put("/product", payload, format="json")
+
+    assert response.json()["message"] == (
+        "id: 유효한 정수를 입력하세요., name: 이름에 콤마(,)를 넣을 수 없습니다., "
+        'category: "Z"은 유효하지 않은 선택입니다., materials: 이 필드는 필수 항목입니다.'
+    )
+
+
+# djangorestframework==3.16.1 한국어 번역과 LANGUAGE_CODE=ko-kr에 의존한다.
+# 깨지면 프론트엔드에 보이는 문구가 바뀐 것이므로 기대값이 아니라 구현을 맞춘다.
+def test_bulk_create_name_with_comma_message(client, catalog):
+    payload = {"products": [product_payload("판자"), product_payload("a,b")]}
+
+    response = client.post("/product/all", payload, format="json")
+
+    assert response.json()["message"] == "products.1.name: 이름에 콤마(,)를 넣을 수 없습니다."

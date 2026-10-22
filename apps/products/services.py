@@ -1,32 +1,18 @@
-import hmac
 from collections import Counter
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
 from rest_framework.exceptions import ValidationError
 
 from apps.common.exceptions import BadRequest
 from apps.products.models import Material, Product
+from apps.products.recipes import check_recipes
 from apps.products.serializers import ProductInputSerializer
-from apps.results.services import check_recipes
 
 DUPLICATE_PRODUCT_MESSAGE = "이미 추가된 물품입니다."
 
 
-def products_with_materials():
-    return Product.objects.prefetch_related(Prefetch("materials", queryset=Material.objects.order_by("id")))
-
-
-def login(password):
-    expected = settings.LOGIN_PASSWORD
-    # 비밀번호가 설정되지 않은 서버에서는 로그인을 허용하지 않는다.
-    if not expected or not hmac.compare_digest(str(password).encode(), expected.encode()):
-        raise BadRequest("비밀번호가 올바르지 않습니다.")
-
-
 def list_products(name=None):
-    queryset = products_with_materials().order_by("id")
+    queryset = Product.objects.with_materials().order_by("id")
     if name:
         queryset = queryset.filter(name__contains=name)
     return queryset
@@ -34,17 +20,15 @@ def list_products(name=None):
 
 @transaction.atomic
 def create_product(data):
-    materials = data.pop("materials")
     if Product.objects.filter(name=data["name"]).exists():
         raise BadRequest(DUPLICATE_PRODUCT_MESSAGE)
-    product = _save_new_products([Product(**data)])[0]
-    _create_materials(product, materials)
+    product = _insert_products_with_materials([data])[0]
     check_recipes([product.name])
-    return products_with_materials().get(pk=product.pk)
+    return Product.objects.with_materials().get(pk=product.pk)
 
 
 @transaction.atomic
-def create_products(rows):
+def bulk_create_products(rows):
     """업로드한 물품 중 아직 없는 물품만 재료와 함께 추가한다.
 
     프론트엔드는 새 물품만이 아니라 로컬 카탈로그 전체를 보낸다. 이미 있는 물품은 건너뛰므로 검증도 하지 않는다
@@ -59,18 +43,9 @@ def create_products(rows):
     new_rows = [(index, row) for index, (row, name) in enumerate(zip(rows, names, strict=True)) if name not in existing]
     if not new_rows:
         raise BadRequest("새로 추가할 물품이 없습니다.")
-    items = _validate_new_rows(new_rows)
-
-    products = _save_new_products(
-        [Product(**{key: value for key, value in item.items() if key != "materials"}) for item in items]
-    )
-    Material.objects.bulk_create(
-        Material(product=product, **material)
-        for product, item in zip(products, items, strict=True)
-        for material in item["materials"]
-    )
+    products = _insert_products_with_materials(_validate_new_rows(new_rows))
     check_recipes([product.name for product in products])
-    return list(products_with_materials().filter(pk__in=[product.pk for product in products]).order_by("id"))
+    return list(Product.objects.with_materials().filter(pk__in=[product.pk for product in products]).order_by("id"))
 
 
 @transaction.atomic
@@ -93,12 +68,12 @@ def update_product(data):
     product.materials.all().delete()
     _create_materials(product, materials)
     check_recipes([product.name])
-    return products_with_materials().get(pk=product.pk)
+    return Product.objects.with_materials().get(pk=product.pk)
 
 
 @transaction.atomic
 def delete_products(ids):
-    """기존 TypeORM DeleteResult 모양({raw, affected})을 id마다 돌려준다."""
+    """ids 중 찾아서 삭제한 물품 id 집합을 돌려준다."""
     products = dict(Product.objects.select_for_update().filter(pk__in=ids).values_list("pk", "name"))
     references = list(
         Material.objects.filter(basic=False, name__in=products.values())
@@ -114,7 +89,7 @@ def delete_products(ids):
 
     # 재료(material)와 결과(result)는 CASCADE로 함께 지워진다.
     Product.objects.filter(pk__in=products).delete()
-    return [{"raw": [], "affected": 1 if product_id in products else 0} for product_id in ids]
+    return set(products)
 
 
 def _row_name(row):
@@ -134,6 +109,19 @@ def _validate_new_rows(indexed_rows):
         # 에러 위치는 업로드 목록의 원래 순서 기준 (예: products.3.count)
         raise ValidationError({"products": errors})
     return items
+
+
+def _insert_products_with_materials(items):
+    """검증된 물품 dict(재료 포함) 목록을 물품과 재료로 저장하고, 저장한 물품 목록을 돌려준다."""
+    products = _save_new_products(
+        [Product(**{key: value for key, value in item.items() if key != "materials"}) for item in items]
+    )
+    Material.objects.bulk_create(
+        Material(product=product, **material)
+        for product, item in zip(products, items, strict=True)
+        for material in item["materials"]
+    )
+    return products
 
 
 def _save_new_products(products):

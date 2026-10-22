@@ -23,6 +23,12 @@ class Category(models.TextChoices):
     EVENT = "EVENT", "이벤트"
 
 
+class ProductQuerySet(models.QuerySet):
+    def with_materials(self):
+        """재료(id 순)를 함께 읽는다."""
+        return self.prefetch_related(materials_prefetch())
+
+
 class Product(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255, unique=True)
@@ -30,6 +36,8 @@ class Product(models.Model):
     crafting_price = models.IntegerField(db_column="craftingPrice")
     tool = models.CharField(max_length=255, choices=Tool.choices)
     category = models.CharField(max_length=255, choices=Category.choices)
+
+    objects = ProductQuerySet.as_manager()
 
     class Meta:
         db_table = "product"
@@ -60,3 +68,13 @@ class Material(models.Model):
 
     def __str__(self):
         return f"{self.name} x{self.count}"
+
+
+def materials_prefetch(lookup="materials"):
+    """재료를 id 순(= 레시피 순서)으로 읽는 Prefetch. 응답의 물품 재료(materials) 순서가 이 정렬에 달려 있다.
+
+    쓰는 곳마다 lookup 경로가 달라서('materials', 'product__materials') 모듈 상수 대신 함수로 둔다.
+    계산기용 레시피는 apps.products.recipes.load_recipes가 같은 기준(product_id, id 순)으로 따로 읽으므로
+    정렬 기준을 바꿀 때 함께 고친다.
+    """
+    return models.Prefetch(lookup, queryset=Material.objects.order_by("id"))
