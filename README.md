@@ -59,7 +59,7 @@ docker stop myhome-test-pg
 
 ## 무료 배포 (Render + Neon)
 
-웹 서버는 Render 무료 Web Service(Docker), DB는 Neon 무료 Postgres를 쓴다. 프론트엔드는 Cloudflare Pages에 올린다(my-home-frontend README 참고).
+웹 서버는 Render 무료 Web Service(Docker), DB는 Neon 무료 Postgres를 쓴다. 프론트엔드는 Vercel에 올린다(my-home-frontend README 참고).
 
 - Render 무료 인스턴스는 15분 동안 요청이 없으면 잠들고, 다음 요청 때 깨어나는 데 1분 정도 걸린다.
 - Neon 무료 플랜은 저장 공간 0.5GB, 월 100 compute-hours이며, 쉬다가 첫 접속 때 몇 초 콜드스타트가 있다.
@@ -93,7 +93,7 @@ pg_restore --no-owner --no-acl -d "postgresql://<user>:<password>@<host>/<databa
    `DJANGO_SECRET_KEY`는 Render가 만들어 준다.
 3. 배포가 끝나면 `https://<서비스 이름>.onrender.com/`에서 `Hello World!`가 나오는지 확인한다.
 4. 데이터를 옮겼다면 Render의 Shell 탭(무료 플랜에서 안 되면 로컬에서 Neon 접속 정보로)에서 `python manage.py recalculate_results --create-missing`을 한 번 실행한다.
-5. 프론트엔드(Cloudflare Pages)의 `VITE_API_BASE_URL`을 이 주소로 설정한다.
+5. 프론트엔드(Vercel) 프로젝트의 환경변수 `VITE_API_BASE_URL`을 이 주소로 설정하고 다시 배포한다.
 
 `.env`는 git에 없으므로 Render 이미지에는 들어가지 않는다. 설정은 모두 Render 환경변수로 한다.
 `main`에 푸시하면 Render가 자동으로 다시 배포한다.
