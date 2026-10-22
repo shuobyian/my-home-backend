@@ -57,8 +57,14 @@ DATABASES = {
         "PASSWORD": env("POSTGRES_PASSWORD", default=""),
         "NAME": env("POSTGRES_NAME", default="postgres"),
         "CONN_MAX_AGE": env.int("POSTGRES_CONN_MAX_AGE", default=60),
+        # Neon처럼 쉬는 동안 연결을 끊는 DB에서도 끊긴 연결을 다시 쓰지 않도록 요청마다 확인한다.
+        "CONN_HEALTH_CHECKS": True,
     }
 }
+
+# Neon 같은 관리형 DB는 SSL 접속이 필수다 (예: POSTGRES_SSLMODE=require). 비어 있으면 libpq 기본값을 쓴다.
+if POSTGRES_SSLMODE := env("POSTGRES_SSLMODE", default=""):
+    DATABASES["default"]["OPTIONS"] = {"sslmode": POSTGRES_SSLMODE}
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
