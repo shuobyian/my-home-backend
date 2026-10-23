@@ -20,19 +20,6 @@ def product_payload(name="새물품", **overrides):
     return {**payload, **overrides}
 
 
-def test_login(client):
-    assert client.post("/product/login", {"password": "test-password"}, format="json").status_code == 201
-
-    response = client.post("/product/login", {"password": "wrong"}, format="json")
-    assert response.status_code == 400
-    assert response.json() == {"statusCode": 400, "message": "비밀번호가 올바르지 않습니다.", "error": "Bad Request"}
-
-
-def test_login_rejects_when_password_not_configured(client, settings):
-    settings.LOGIN_PASSWORD = ""
-    assert client.post("/product/login", {"password": ""}, format="json").status_code == 400
-
-
 def test_list_products_with_page_and_name(client, catalog):
     response = client.get("/product", {"page": 0, "size": 2})
     body = response.json()
@@ -244,13 +231,6 @@ def test_integer_out_of_db_range_is_rejected(client, db):
 
     assert response.status_code == 400
     assert response.json()["message"].startswith("level:")
-
-
-def test_login_without_password(client):
-    response = client.post("/product/login", {}, format="json")
-
-    assert response.status_code == 400
-    assert response.json()["message"] == "비밀번호가 올바르지 않습니다."
 
 
 def test_request_body_over_limit_is_rejected(client, settings, db):

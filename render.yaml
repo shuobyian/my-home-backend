@@ -34,6 +34,3 @@ services:
         sync: false
       - key: POSTGRES_SSLMODE
         value: require
-      # /product/login 관리자 비밀번호
-      - key: PASSWORD
-        sync: false

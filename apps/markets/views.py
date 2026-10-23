@@ -1,11 +1,14 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.common.permissions import IsAdminOrReadOnly
 from apps.markets import services
 from apps.markets.serializers import MarketSerializer, MarketUpdateSerializer
 
 
 class MarketView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request):
         return Response(MarketSerializer(services.list_markets(), many=True).data)
 

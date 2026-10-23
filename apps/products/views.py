@@ -1,8 +1,10 @@
 from rest_framework import status
+from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.params import paginate, query_page, query_str
+from apps.common.permissions import IsAdminOrReadOnly
 from apps.products import services
 from apps.products.serializers import (
     ProductBulkCreateSerializer,
@@ -14,6 +16,8 @@ from apps.products.serializers import (
 
 
 class ProductView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request):
         page, size = query_page(request)
         products, total = paginate(services.list_products(name=query_str(request, "name")), page, size)
@@ -41,6 +45,8 @@ class ProductView(APIView):
 
 
 class ProductBulkCreateView(APIView):
+    permission_classes = [IsAdminUser]
+
     def post(self, request):
         serializer = ProductBulkCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
