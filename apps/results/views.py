@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.params import paginate, query_choice, query_int, query_page, query_str
+from apps.common.permissions import IsAdminOrReadOnly
 from apps.products.models import Category, Tool
 from apps.results import services
 from apps.results.presenters import present_result
@@ -13,6 +14,8 @@ MAX_CRAFT_COUNT = 1_000_000
 
 
 class ResultView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
     def get(self, request):
         page, size = query_page(request)
         count = query_int(request, "count", default=1, min_value=1, max_value=MAX_CRAFT_COUNT)

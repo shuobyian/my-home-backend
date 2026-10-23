@@ -1,13 +1,29 @@
 import pytest
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
+from apps.accounts.models import User
 from apps.experiences.models import Experience
 from apps.markets.models import Market
 from tests.factories import make_product
 
 
+@pytest.fixture(autouse=True)
+def clear_throttle_history():
+    # 요청 횟수 제한(throttle) 기록이 다음 테스트로 넘어가지 않게 한다.
+    cache.clear()
+
+
 @pytest.fixture
 def client():
+    """관리자로 로그인한 클라이언트. 쓰기 API는 관리자만 쓸 수 있다 (권한 자체는 test_accounts_api에서 본다)."""
+    client = APIClient()
+    client.force_authenticate(user=User(username="admin", is_staff=True))
+    return client
+
+
+@pytest.fixture
+def anon_client():
     return APIClient()
 
 

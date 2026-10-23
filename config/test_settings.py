@@ -11,7 +11,8 @@ os.environ.setdefault("DJANGO_SECRET_KEY", "test-secret-key")
 from config.settings import *  # noqa: E402,F403
 from config.settings import env  # noqa: E402
 
-LOGIN_PASSWORD = "test-password"
+# 비밀번호 해시가 느리면(PBKDF2) 테스트가 오래 걸린다.
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 DATABASES = {
     "default": env.db_url("TEST_DATABASE_URL", default="sqlite://:memory:"),

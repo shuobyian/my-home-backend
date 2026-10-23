@@ -13,7 +13,8 @@
 
 ```
 config/                 Django 설정, URL
-apps/common/            공통 (Nest 호환 에러 형식, 쿼리 파싱, 숫자 형식, 관리자 로그인(/product/login), 시퀀스 보정 마이그레이션)
+apps/common/            공통 (Nest 호환 에러 형식, 쿼리 파싱, 숫자 형식, 관리자 권한, 시퀀스 보정 마이그레이션)
+apps/accounts/          회원(user), 로그인 토큰 — /auth
 apps/products/          물품(product), 재료(material) — /product
   recipes.py            레시피 읽기·검증 (DB에서 레시피를 읽어 계산기로 펼칠 수 있는지 확인)
 apps/markets/           시세(market) — /market
@@ -32,6 +33,7 @@ source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env   # 값 채우기
 python manage.py migrate --fake-initial
+python manage.py createsuperuser   # 관리자 계정 (물품·시세 수정용)
 python manage.py runserver 8123
 ```
 
@@ -89,11 +91,12 @@ pg_restore --no-owner --no-acl -d "postgresql://<user>:<password>@<host>/<databa
 ### 3. Render 웹 서버 만들기
 
 1. Render 대시보드에서 **New > Blueprint**를 누르고 이 저장소를 고른다. `render.yaml`대로 서비스가 만들어진다.
-2. 입력하라고 나오는 값(`POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_NAME`, `PASSWORD`)을 채운다.
+2. 입력하라고 나오는 값(`POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_NAME`)을 채운다.
    `DJANGO_SECRET_KEY`는 Render가 만들어 준다.
 3. 배포가 끝나면 `https://<서비스 이름>.onrender.com/`에서 `Hello World!`가 나오는지 확인한다.
 4. 데이터를 옮겼다면 Render의 Shell 탭(무료 플랜에서 안 되면 로컬에서 Neon 접속 정보로)에서 `python manage.py recalculate_results --create-missing`을 한 번 실행한다.
-5. 프론트엔드(Vercel) 프로젝트의 환경변수 `VITE_API_BASE_URL`을 이 주소로 설정하고 다시 배포한다.
+5. 관리자 계정을 만든다. Render의 Shell 탭(안 되면 로컬에서 `.env`에 Neon 접속 정보를 넣고)에서 `python manage.py createsuperuser`.
+6. 프론트엔드(Vercel) 프로젝트의 환경변수 `VITE_API_BASE_URL`을 이 주소로 설정하고 다시 배포한다.
 
 `.env`는 git에 없으므로 Render 이미지에는 들어가지 않는다. 설정은 모두 Render 환경변수로 한다.
 `main`에 푸시하면 Render가 자동으로 다시 배포한다.
@@ -163,20 +166,44 @@ DB를 따로 운영한다면 같은 방식으로 `pg_dump` → PostgreSQL 16 서
 기존 DB에서 전환한 경우에만 Nest 서버로 되돌릴 수 있다 (Django는 기존 테이블 구조를 바꾸지 않는다).
 Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이지 않는다. 붙이면 Nest가 Django의 FK와 인덱스를 지우고 다시 만든다.
 
+## 회원과 권한
+
+- 누구나 회원가입(`POST /auth/signup`)하고 로그인할 수 있다. 조회·계산 API는 로그인 없이 쓴다.
+- 쓰기 API(아래 표의 **관리자**)는 관리자(`is_staff`) 계정만 쓴다. 로그인하지 않았으면 401, 일반 회원이면 403이다.
+- 이미 배포된 서버에 이 기능을 올릴 때: `main`에 머지하면 Render가 바로 배포해서, 토큰을 보내지 않는 기존 프론트의
+  관리 기능(로그인·쓰기)이 멈춘다. 프론트의 `/auth/login`·Bearer 토큰 지원을 먼저 준비한 뒤 백엔드를 머지하고,
+  `createsuperuser`로 관리자를 만든 다음 프론트를 배포한다.
+- 관리자는 `python manage.py createsuperuser`로 만든다. 이미 가입한 회원을 관리자로 바꾸려면
+  `python manage.py shell -c "from apps.accounts.models import User; User.objects.filter(username='<아이디>').update(is_staff=True)"`.
+- 로그인·가입 응답의 `token`을 이후 요청 헤더에 `Authorization: Bearer <token>`으로 넣는다.
+  토큰은 7일 동안 유효하고(`expiresAt`), 로그인(기기)마다 따로 발급된다. DB에는 토큰의 SHA-256 해시만 저장한다.
+- 토큰이 틀리거나 만료됐으면 익명으로 처리한다. 공개 API는 그대로 응답하고, 로그인이 필요한 API는 401이다.
+- 로그아웃은 그 기기의 토큰만 지운다. 비밀번호를 바꾸면 모든 기기의 토큰을 지우고 새 토큰을 준다.
+- 비밀번호는 Django 기본 검사(8자 이상, 흔한 비밀번호·숫자만·아이디와 비슷한 비밀번호 금지)를 통과해야 한다.
+  아이디는 대소문자만 다른 아이디를 따로 만들 수 없다 (`Admin`이 있으면 `admin` 가입 불가). 로그인할 때는 대소문자를 구분한다.
+  아이디는 NFKC로 바꿔 저장하고 비교한다 (전각 `ａｂｃ` → `abc`).
+- 로그인·가입·비밀번호 확인(변경·탈퇴)은 횟수를 제한한다 (로그인·비밀번호 확인 분당 10회, 가입 시간당 10회, 넘으면 429).
+  제한 기록은 프로세스 메모리에 있어서 gunicorn worker마다 따로 세고, 재시작하면 지워진다.
+
 ## API
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/` | 헬스 체크 (`Hello World!`) |
-| POST | `/product/login` | `{password}` 관리자 비밀번호 확인 |
+| POST | `/auth/signup` | `{username, password}` 회원가입 후 로그인 `{token, expiresAt, user}` (201) |
+| POST | `/auth/login` | `{username, password}` 로그인 `{token, expiresAt, user: {id, username, isAdmin}}` |
+| POST | `/auth/logout` | 이 기기의 토큰 삭제 (204, 토큰이 없어도 204) |
+| GET | `/auth/me` | 내 정보 `{id, username, isAdmin}` (로그인) |
+| PUT | `/auth/password` | `{currentPassword, newPassword}` 비밀번호 변경, 새 `{token, expiresAt, user}` (로그인) |
+| DELETE | `/auth/me` | `{password}` 회원 탈퇴 (204, 로그인) |
 | GET | `/product?page&size&name` | 물품 목록 (재료 포함) `{totalElements, content}` |
-| POST | `/product` | 물품 추가 (재료 포함) |
-| POST | `/product/all` | `{products: [...]}` 일괄 추가 (이미 있는 물품은 건너뜀) |
-| PUT | `/product` | 물품 수정 (보낸 필드만 수정, 재료는 통째로 교체) |
-| DELETE | `/product` | `{ids: [...]}` 또는 `[id, ...]` 삭제 (재료·결과도 함께 삭제) |
+| POST | `/product` | 물품 추가 (재료 포함) (관리자) |
+| POST | `/product/all` | `{products: [...]}` 일괄 추가 (이미 있는 물품은 건너뜀) (관리자) |
+| PUT | `/product` | 물품 수정 (보낸 필드만 수정, 재료는 통째로 교체) (관리자) |
+| DELETE | `/product` | `{ids: [...]}` 또는 `[id, ...]` 삭제 (재료·결과도 함께 삭제) (관리자) |
 | GET | `/market` | 시세 목록 |
-| PUT | `/market` | `[{id, name, price}]` 시세 수정/추가 후 전체 결과 재계산 |
-| POST | `/result` | 결과가 없는 물품의 결과 생성 |
+| PUT | `/market` | `[{id, name, price}]` 시세 수정/추가 후 전체 결과 재계산 (관리자) |
+| POST | `/result` | 결과가 없는 물품의 결과 생성 (관리자) |
 | GET | `/result?page&size&name&count&tool&category` | 결과 목록 (`count`개 제작 기준) |
 | POST | `/result/calculator` | `{markets: [{name, price}]}` 입력 시세로 미리 계산 (저장 안 함, price가 null이면 0원) |
 | GET | `/experience` | 레벨별 경험치 |
@@ -197,7 +224,8 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 
 ## 기존 대비 달라진 동작
 
-프론트엔드(my-home-frontend)가 쓰는 정상 요청의 응답 형식은 그대로다. 응답에 키가 추가된 곳만 있다
+로그인(`/product/login` 대신 `/auth/login`)과 쓰기 API의 관리자 토큰을 빼면, 프론트엔드(my-home-frontend)가 쓰는
+정상 요청의 응답 형식은 그대로다. 응답에 키가 추가된 곳만 있다
 (결과 항목의 최상위 `category`, 물품 추가·수정 응답의 `id`/`materials`).
 
 **계산·저장**
@@ -229,6 +257,7 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 **기타**
 - 쓰기 API는 트랜잭션으로 처리한다. 중간에 실패하면 전부 취소된다.
 - 경험치 계산은 레벨마다 쿼리하던 것을 한 번의 쿼리로 바꿨다.
-- 서버에 `PASSWORD`가 설정되지 않았으면 로그인할 수 없다 (기존에는 비밀번호 없이 요청하면 통과했다).
+- 쓰기 API는 관리자 계정으로 로그인해야 쓸 수 있다 (기존에는 누구나 호출할 수 있었다). 공용 비밀번호 로그인(`POST /product/login`)과
+  `PASSWORD` 환경변수는 없어졌다. 회원·권한은 위 '회원과 권한'을 본다.
 - 요청 본문 50MB 제한이 실제로 적용된다 (413). 폼(urlencoded) 본문은 받지 않는다 (415).
 - 지원하지 않는 HTTP 메서드는 404 대신 405다.

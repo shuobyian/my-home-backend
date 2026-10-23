@@ -5,6 +5,7 @@ from apps.common.views import health
 
 urlpatterns = [
     route("", health),
+    path("", include("apps.accounts.urls")),
     path("", include("apps.products.urls")),
     path("", include("apps.markets.urls")),
     path("", include("apps.results.urls")),

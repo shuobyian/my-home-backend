@@ -3,6 +3,7 @@
 환경변수(.env)는 기존 NestJS 서버와 같은 키를 그대로 사용한다.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -26,13 +27,13 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
 
-# 로그인 API(/product/login)에서 비교하는 관리자 비밀번호
-LOGIN_PASSWORD = env("PASSWORD", default="")
-
 INSTALLED_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.auth",
     "corsheaders",
     "rest_framework",
     "apps.common",
+    "apps.accounts",
     "apps.products",
     "apps.markets",
     "apps.results",
@@ -68,6 +69,18 @@ if POSTGRES_SSLMODE := env("POSTGRES_SSLMODE", default=""):
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
+AUTH_USER_MODEL = "accounts.User"
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+# 로그인 토큰 유효 기간. 지나면 다시 로그인해야 한다.
+AUTH_TOKEN_TTL = timedelta(days=7)
+
 LANGUAGE_CODE = "ko-kr"
 TIME_ZONE = "Asia/Seoul"
 USE_I18N = True
@@ -86,9 +99,15 @@ CORS_ALLOW_HEADERS = (*default_headers, "*")
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["apps.common.parsers.LimitedJSONParser"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.authentication.BearerTokenAuthentication"],
+    # 쓰기 API는 뷰마다 관리자 권한(apps.common.permissions.IsAdminOrReadOnly 등)을 건다.
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
-    "UNAUTHENTICATED_USER": None,
+    # throttle_scope가 있는 뷰(로그인·가입·비밀번호 확인)만 횟수를 제한한다.
+    # ponytail: 기록은 프로세스 메모리(LocMemCache)라 gunicorn worker마다 따로 센다.
+    # 클라이언트 구분은 X-Forwarded-For 전체 값이라 위조로 피할 수 있다.
+    # 정확히 막아야 하면 공유 캐시(DB·Redis)로 옮기고, 프록시 단계 수를 확인해 NUM_PROXIES를 정한다.
+    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
+    "DEFAULT_THROTTLE_RATES": {"auth": "10/min", "signup": "10/hour"},
     "EXCEPTION_HANDLER": "apps.common.exceptions.nest_exception_handler",
 }
 
