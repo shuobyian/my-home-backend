@@ -30,6 +30,11 @@ PRESENTED_KEYS = [
     "materials",
 ]
 PRESENTED_PRODUCT_KEYS = ["id", "name", "level", "craftingPrice", "tool", "category", "materials"]
+CHECK_KEYS = ["summary", "products", "markets", "problems"]
+CHECK_SUMMARY_KEYS = ["products", "markets", "results", "errors", "warnings", "infos"]
+CHECK_PRODUCT_KEYS = ["id", "name", "status", "resultId"]
+CHECK_MARKET_KEYS = ["id", "name", "price", "usedBy"]
+PROBLEM_KEYS = ["code", "severity", "productId", "productName", "material", "marketId", "related", "hint", "message"]
 JS_DATETIME = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z"
 
 
@@ -103,6 +108,35 @@ def test_market_key_order(client, catalog):
     assert list(client.get("/market").json()[0]) == ["id", "name", "price"]
     body = client.put("/market", [{"id": wood_id, "price": 11}], format="json").json()
     assert list(body[0]) == ["id", "name", "price"]
+
+
+def test_delete_market_key_order(client, catalog):
+    gold = Market.objects.create(name="금", price=1000)
+
+    body = client.delete("/market", {"ids": [gold.id]}, format="json").json()
+
+    assert list(body) == ["deletedIds"]
+
+
+def test_catalog_check_key_order(client, catalog):
+    # 결과를 만들지 않아서 MISSING_RESULT(물품 문제)와 REQUIRED_PRODUCT_MISSING(물품 없음)이 함께 나온다.
+    Market.objects.create(name="금", price=1000)  # UNUSED_MARKET(시세 문제)
+
+    body = client.get("/catalog/check").json()
+
+    assert list(body) == CHECK_KEYS
+    assert list(body["summary"]) == CHECK_SUMMARY_KEYS
+    assert body["products"]
+    assert all(list(product) == CHECK_PRODUCT_KEYS for product in body["products"])
+    assert body["markets"]
+    assert all(list(market) == CHECK_MARKET_KEYS for market in body["markets"])
+    assert {problem["code"] for problem in body["problems"]} == {
+        "MISSING_RESULT",
+        "REQUIRED_PRODUCT_MISSING",
+        "UNUSED_MARKET",
+    }
+    # 해당 없는 필드도 키는 항상 있다 (null이나 []).
+    assert all(list(problem) == PROBLEM_KEYS for problem in body["problems"])
 
 
 def test_create_result_key_order(client, catalog):

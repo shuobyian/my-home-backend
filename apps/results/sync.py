@@ -8,6 +8,7 @@
 그래서 쓰기 API가 성공하면 계산할 수 있는 모든 물품의 결과가 현재 레시피·시세와 같다. 이미 있던 문제(레거시 데이터,
 DB 직접 수정)는 다른 쓰기를 막지 않고, 그런 물품의 저장된 결과는 지우지 않고 마지막 값으로 둔다.
 결과는 지우고 다시 만들지 않고 제자리에서 갱신한다 (id·createdAt 보존, 값이 바뀐 행만 updatedAt 갱신).
+남은 문제는 check_catalog(GET /catalog/check)가 저장하지 않고 모두 보여 준다.
 
 이 모듈은 products.services, markets.services를 import하지 않는다 (그쪽이 이 모듈을 부른다).
 """
@@ -19,12 +20,36 @@ from django.db.transaction import TransactionManagementError
 from django.utils import timezone
 
 from apps.common.exceptions import BadRequest
+from apps.experiences.services import AMPLE_PRODUCT_NAME
 from apps.markets.models import Market
 from apps.products.recipes import load_catalog
-from apps.results.diagnosis import diagnose, rejection_message, select_rejection
+from apps.results.diagnosis import ERROR_CODES, diagnose, rejection_message, select_rejection
 from apps.results.models import Result
 
 SAVE_CONFLICT_MESSAGE = "결과를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+# 점검(GET /catalog/check)의 경고·정보 문제. 차단 문제(error)는 apps.results.diagnosis가 찾는다.
+MISSING_RESULT = "MISSING_RESULT"
+STALE_RESULT = "STALE_RESULT"
+NAME_CONFLICT = "NAME_CONFLICT"
+REQUIRED_PRODUCT_MISSING = "REQUIRED_PRODUCT_MISSING"
+UNUSED_MARKET = "UNUSED_MARKET"
+HINT_SYNC_RESULTS = "'결과 다시 맞추기'를 누르세요."
+# code → (severity, 메시지 접두 문구, hint). 메시지는 '{접두 문구} ({이름})'이다.
+NOTICES = {
+    MISSING_RESULT: ("warning", "결과가 없습니다.", HINT_SYNC_RESULTS),
+    STALE_RESULT: ("warning", "저장된 결과가 현재 레시피·시세와 다릅니다.", HINT_SYNC_RESULTS),
+    NAME_CONFLICT: (
+        "warning",
+        "같은 이름의 물품과 시세가 있습니다.",
+        "'최하위재료'로 쓰면 시세 가격, '하위재료 O'로 쓰면 물품 레시피로 계산됩니다.",
+    ),
+    REQUIRED_PRODUCT_MISSING: ("warning", "호두작 계산에 쓰는 물품의 결과가 없습니다.", None),
+    UNUSED_MARKET: ("info", "어떤 물품도 쓰지 않는 시세입니다.", "필요 없으면 삭제하세요."),
+}
+# 점검 문제의 정렬 순서: 수준 → 코드 → 물품 id(없으면 뒤) → (같은 물품 안에서는 레시피 순) → 시세 id
+SEVERITIES = ("error", "warning", "info")
+CHECK_CODES = (*ERROR_CODES, *NOTICES)
 
 
 @dataclass(frozen=True)
@@ -35,6 +60,51 @@ class SyncReport:
     updated: int
     unchanged: int
     recalculated: int
+
+
+@dataclass(frozen=True)
+class ProductCheck:
+    """점검한 물품 하나. status: ok | missing(결과 없음) | stale(결과 낡음) | error(계산할 수 없음)"""
+
+    id: int
+    name: str
+    status: str
+    result_id: int | None
+
+
+@dataclass(frozen=True)
+class MarketUsage:
+    """시세 하나와, 그 이름을 기본 재료(basic=True)로 직접 쓰는 물품 이름(물품 id 순)."""
+
+    id: int
+    name: str
+    price: int
+    used_by: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CheckProblem:
+    """점검 문제 하나. 해당 없는 필드는 None이나 ()다."""
+
+    code: str
+    severity: str
+    message: str
+    product_id: int | None = None
+    product_name: str | None = None
+    material: str | None = None
+    market_id: int | None = None
+    related: tuple[str, ...] = ()
+    hint: str | None = None
+
+
+@dataclass(frozen=True)
+class CatalogCheck:
+    """check_catalog() 결과. products는 물품 id 순, markets는 시세 id 순, problems는 CHECK_CODES 기준 정렬이다."""
+
+    products: list[ProductCheck]
+    markets: list[MarketUsage]
+    problems: list[CheckProblem]
+    results: int  # 저장된 결과 수
 
 
 def lock_catalog():
@@ -90,6 +160,90 @@ def sync_all_results(*, create_missing=True, strict=False):
         raise BadRequest(rejection_message(problem for problem in diagnosis.problems if problem in causes))
     sheets = {name: diagnosis.sheets[name] for name in scope if name in diagnosis.sheets}
     return _save(sheets, product_ids, stored)
+
+
+def check_catalog():
+    """시세·물품·결과가 서로 맞는지 점검한다 (GET /catalog/check). 저장하지 않고 잠그지 않는다. 쿼리는 4번이다.
+
+    차단 문제(error)는 쓰기 API와 같은 진단(diagnose)으로 찾는다. 그 밖에 결과가 없거나 낡은 물품, 이름이 같은
+    물품과 시세, 호두작 계산에 쓰는 물품의 결과 누락(warning), 쓰지 않는 시세(info)를 함께 알린다.
+    """
+    recipes, product_ids = load_catalog()
+    markets = list(Market.objects.order_by("id").values_list("id", "name", "price"))
+    stored = _stored_results()
+    diagnosis = diagnose(recipes, product_ids, {name: price for _, name, price in markets})
+
+    problems = [_blocking_problem(problem) for problem in diagnosis.problems]
+    products = []
+    for name in recipes:  # 물품 id 순
+        product_id = product_ids[name]
+        result, sheet = stored.get(product_id), diagnosis.sheets.get(name)
+        if sheet is None:
+            status = "error"  # 계산할 수 없다. 이유는 차단 문제에 있다.
+        elif result is None:
+            status = "missing"
+            problems.append(_notice(MISSING_RESULT, name, product_id=product_id, product_name=name))
+        elif not result.matches(sheet):
+            status = "stale"
+            problems.append(_notice(STALE_RESULT, name, product_id=product_id, product_name=name))
+        else:
+            status = "ok"
+        products.append(ProductCheck(product_id, name, status, result.id if result else None))
+
+    used_by = {}  # 시세 이름 → {물품 이름: None}. 물품 id 순이고, 한 물품이 같은 재료를 여러 줄 써도 한 번이다.
+    for name, recipe in recipes.items():
+        for item in recipe:
+            if item.basic:
+                used_by.setdefault(item.name, {})[name] = None
+    for market_id, name, _ in markets:
+        if name in product_ids:
+            conflict = {"product_id": product_ids[name], "product_name": name, "material": name, "market_id": market_id}
+            problems.append(_notice(NAME_CONFLICT, name, **conflict))
+        if name not in used_by:
+            problems.append(_notice(UNUSED_MARKET, name, material=name, market_id=market_id))
+
+    # 호두나무 계산(GET /experience/walnut)은 이 물품의 결과가 없으면 400이다.
+    ample_id = product_ids.get(AMPLE_PRODUCT_NAME)
+    if ample_id not in stored:
+        problems.append(
+            _notice(REQUIRED_PRODUCT_MISSING, AMPLE_PRODUCT_NAME, product_id=ample_id, product_name=AMPLE_PRODUCT_NAME)
+        )
+
+    # 정렬이 안정적이라 같은 물품의 재료 문제는 진단 순서(레시피 순)를 지킨다.
+    problems.sort(key=_check_problem_order)
+    usages = [MarketUsage(market_id, name, price, tuple(used_by.get(name, ()))) for market_id, name, price in markets]
+    return CatalogCheck(products=products, markets=usages, problems=problems, results=len(stored))
+
+
+def _blocking_problem(problem):
+    """진단의 차단 문제(diagnosis.Problem)를 점검 문제로 바꾼다."""
+    return CheckProblem(
+        problem.code,
+        "error",
+        problem.message,
+        product_id=problem.product.id,
+        product_name=problem.product.name,
+        material=problem.material,
+        related=problem.related,
+        hint=problem.hint,
+    )
+
+
+def _notice(code, name, **fields):
+    """경고·정보 문제. 메시지는 '{접두 문구} ({name})'이다."""
+    severity, prefix, hint = NOTICES[code]
+    return CheckProblem(code, severity, f"{prefix} ({name})", hint=hint, **fields)
+
+
+def _check_problem_order(problem):
+    return (
+        SEVERITIES.index(problem.severity),
+        CHECK_CODES.index(problem.code),
+        problem.product_id is None,
+        problem.product_id or 0,
+        problem.market_id is None,
+        problem.market_id or 0,
+    )
 
 
 def _load():

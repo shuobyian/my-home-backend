@@ -59,6 +59,9 @@ def test_read_endpoints_query_count(client, django_assert_num_queries, n):
         client.get("/product")
     with django_assert_num_queries(5):
         client.post("/result/calculator", {"markets": [{"name": "나무", "price": 1}]}, format="json")
+    # 레시피 2 + 시세 1 + 결과 1
+    with django_assert_num_queries(4):
+        client.get("/catalog/check")
 
 
 def test_walnut_query_count(client, experiences, ample, django_assert_num_queries):
@@ -72,6 +75,9 @@ def test_write_endpoints_query_count_does_not_grow(client):
     # 결과는 값이 바뀐 행만 갱신하므로, 회차마다 시세와 판자 레시피를 다르게 바꿔야 두 회차 모두 결과 UPDATE가 나간다.
     def measure_writes(wood_id, plank_id, value, names, new_name):
         plank = {"id": plank_id, "materials": [{"name": "나무", "basic": True, "count": value}]}
+        # 삭제 대상: 아무도 쓰지 않는 시세와, 다른 레시피가 쓰지 않는 물품
+        spare_market = Market.objects.create(name=f"여분{value}", price=1)
+        spare_product = make_product(f"삭제{value}", [("나무", True, 1)])
         counts = []
         for send, status in [
             (lambda: client.post("/result"), 201),
@@ -83,6 +89,8 @@ def test_write_endpoints_query_count_does_not_grow(client):
             (lambda: client.post("/product", upload_row(new_name), format="json"), 201),
             # 판자를 바꾸면 판자를 재료로 쓰는 물품 전부(n개)의 결과가 바뀐다.
             (lambda: client.put("/product", plank, format="json"), 200),
+            (lambda: client.delete("/market", {"ids": [spare_market.id]}, format="json"), 200),
+            (lambda: client.delete("/product", [spare_product.id], format="json"), 200),
         ]:
             response, count = measure(send)
             assert response.status_code == status

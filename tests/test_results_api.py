@@ -219,7 +219,12 @@ def test_result_total_over_integer_column_is_not_saved(client, catalog):
     assert response.status_code == 201
     assert response.json() == []
     assert not Result.objects.exists()
-    # 저장하지 못한 이유는 엄격 모드(관리 명령)가 모두 알린다.
+    # 저장하지 못한 이유는 데이터 점검이 물품마다 알린다.
+    problems = client.get("/catalog/check").json()["problems"]
+    assert [item["message"] for item in problems if item["code"] == "TOTAL_OVERFLOW"] == [
+        f"합계 금액이 너무 커서 저장할 수 없습니다. ({name})" for name in ["판자", "식탁", "의자"]
+    ]
+    # 엄격 모드(관리 명령)는 한 메시지로 모두 알린다.
     with pytest.raises(CommandError) as error:
         call_command("recalculate_results", "--create-missing", stdout=StringIO())
     assert str(error.value).endswith("합계 금액이 너무 커서 저장할 수 없습니다. (판자, 식탁, 의자)")
@@ -253,12 +258,13 @@ def test_create_results_invalid_sub_material_message(client, catalog):
     make_product("불량품", [("없는물품", False, 1)])
 
     # 의도적 변경: POST /result는 불량품을 건너뛰고 201이라 이 문구를 응답으로 주지 않는다.
-    # 같은 문구를 엄격 모드 동기화(관리 명령)가 그대로 알리는지 본다.
+    # 같은 문구를 데이터 점검(GET /catalog/check)이 그대로 알리는지 본다.
     assert client.post("/result").status_code == 201
-    with pytest.raises(CommandError) as error:
-        call_command("recalculate_results", "--create-missing", stdout=StringIO())
+    problems = client.get("/catalog/check").json()["problems"]
 
-    assert str(error.value).endswith(" 하위 재료에 잘못된 물품명이 있습니다. (불량품: 없는물품)")
+    assert [item["message"] for item in problems if item["severity"] == "error"] == [
+        "하위 재료에 잘못된 물품명이 있습니다. (불량품: 없는물품)"
+    ]
 
 
 def test_result_matches_compares_stored_columns():
