@@ -36,6 +36,8 @@ class UsernameField(serializers.CharField):
 class SignupSerializer(serializers.Serializer):
     username = UsernameField(max_length=150, validators=[User.username_validator])
     password = PasswordField()
+    # 앞뒤 공백은 빼고 저장한다. 공백뿐이면 빈 값으로 본다.
+    nickname = serializers.CharField(max_length=20)
 
     def validate(self, attrs):
         try:
@@ -85,7 +87,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "isAdmin"]
+        fields = ["id", "username", "nickname", "isAdmin"]
 
 
 class SessionSerializer(serializers.Serializer):

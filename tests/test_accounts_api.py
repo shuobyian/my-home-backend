@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 import pytest
+from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -10,14 +11,16 @@ from apps.results.sync import sync_all_results
 pytestmark = pytest.mark.django_db
 
 PASSWORD = "correct-horse-42"
+NICKNAME = "늘흰"
 
 
 def make_member(username="회원1", *, is_staff=False, password=PASSWORD):
-    return User.objects.create_user(username=username, password=password, is_staff=is_staff)
+    return User.objects.create_user(username=username, password=password, nickname=NICKNAME, is_staff=is_staff)
 
 
-def signup(username="회원1", password=PASSWORD):
-    return APIClient().post("/auth/signup", {"username": username, "password": password}, format="json")
+def signup(username="회원1", password=PASSWORD, nickname=NICKNAME):
+    body = {"username": username, "password": password, "nickname": nickname}
+    return APIClient().post("/auth/signup", body, format="json")
 
 
 def login(username="회원1", password=PASSWORD):
@@ -44,7 +47,7 @@ def test_signup_logs_in_and_stores_only_hashes():
     body = response.json()
 
     assert response.status_code == 201
-    assert body["user"] == {"id": body["user"]["id"], "username": "회원1", "isAdmin": False}
+    assert body["user"] == {"id": body["user"]["id"], "username": "회원1", "nickname": NICKNAME, "isAdmin": False}
     expires_at = datetime.fromisoformat(body["expiresAt"])
     assert abs(expires_at - (timezone.now() + timedelta(days=7))) < timedelta(minutes=1)
     assert bearer(body["token"]).get("/auth/me").json() == body["user"]
@@ -103,6 +106,32 @@ def test_username_is_normalized_like_stored_value():
     assert signup("member").status_code == 400
 
 
+@pytest.mark.parametrize("nickname", ["", "   ", "가" * 21])
+def test_signup_rejects_invalid_nickname(nickname):
+    response = signup(nickname=nickname)
+
+    assert response.status_code == 400
+    assert response.json()["message"].startswith("nickname:")
+    assert not User.objects.exists()
+
+
+def test_signup_requires_nickname():
+    response = APIClient().post("/auth/signup", {"username": "회원1", "password": PASSWORD}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "nickname: 이 필드는 필수 항목입니다."
+
+
+def test_nickname_is_trimmed_and_may_be_shared():
+    assert signup("member1", nickname="  늘흰  ").json()["user"]["nickname"] == "늘흰"
+    assert signup("member2", nickname="늘흰").status_code == 201
+
+
+def test_blank_nickname_is_rejected_by_database():
+    with pytest.raises(IntegrityError):
+        User.objects.create_user("회원1", password=PASSWORD)
+
+
 def test_password_keeps_surrounding_whitespace():
     assert signup(password=" spaced pass 42 ").status_code == 201
 
@@ -121,6 +150,7 @@ def test_login_returns_token_for_member():
 
     assert response.status_code == 200
     assert body["user"]["username"] == "회원1"
+    assert body["user"]["nickname"] == NICKNAME
     assert bearer(body["token"]).get("/auth/me").status_code == 200
 
 
@@ -213,7 +243,8 @@ def test_signup_throttle_ignores_attached_token():
     for i in range(1, 10):
         assert signup(f"member{i}").status_code == 201
 
-    response = bearer(token).post("/auth/signup", {"username": "member10", "password": PASSWORD}, format="json")
+    body = {"username": "member10", "password": PASSWORD, "nickname": NICKNAME}
+    response = bearer(token).post("/auth/signup", body, format="json")
 
     assert response.status_code == 429
 
@@ -344,6 +375,8 @@ def test_admin_can_write_with_login_token(catalog):
     admin = bearer(response.json()["token"])
 
     assert response.json()["user"]["isAdmin"] is True
+    # createsuperuser로 만든 관리자의 닉네임은 '관리자'다.
+    assert response.json()["user"]["nickname"] == "관리자"
     assert admin.post("/result").status_code == 201
     assert admin.put("/market", [{"name": "새재료", "price": 3}], format="json").status_code == 200
     assert admin.get("/catalog/check").status_code == 200

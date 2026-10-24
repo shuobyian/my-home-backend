@@ -184,6 +184,9 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 - 이미 배포된 서버에 이 기능을 올릴 때: `main`에 머지하면 Render가 바로 배포해서, 토큰을 보내지 않는 기존 프론트의
   관리 기능(로그인·쓰기)이 멈춘다. 프론트의 `/auth/login`·Bearer 토큰 지원을 먼저 준비한 뒤 백엔드를 머지하고,
   `createsuperuser`로 관리자를 만든 다음 프론트를 배포한다.
+- 회원가입할 때 게임 닉네임(`nickname`, 20자 이하, 앞뒤 공백 제거)을 꼭 받는다. 다른 회원과 같아도 된다.
+  `createsuperuser`로 만든 관리자의 닉네임은 `관리자`다. 닉네임 추가 전에 있던 회원은 마이그레이션이 채운다
+  (관리자 `관리자`, 일반 회원은 아이디 앞 20자).
 - 관리자는 `python manage.py createsuperuser`로 만든다. 이미 가입한 회원을 관리자로 바꾸려면
   `python manage.py shell -c "from apps.accounts.models import User; User.objects.filter(username='<아이디>').update(is_staff=True)"`.
 - 로그인·가입 응답의 `token`을 이후 요청 헤더에 `Authorization: Bearer <token>`으로 넣는다.
@@ -201,10 +204,10 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/` | 헬스 체크 (`Hello World!`) |
-| POST | `/auth/signup` | `{username, password}` 회원가입 후 로그인 `{token, expiresAt, user}` (201) |
-| POST | `/auth/login` | `{username, password}` 로그인 `{token, expiresAt, user: {id, username, isAdmin}}` |
+| POST | `/auth/signup` | `{username, password, nickname}` 회원가입 후 로그인 `{token, expiresAt, user}` (201) |
+| POST | `/auth/login` | `{username, password}` 로그인 `{token, expiresAt, user: {id, username, nickname, isAdmin}}` |
 | POST | `/auth/logout` | 이 기기의 토큰 삭제 (204, 토큰이 없어도 204) |
-| GET | `/auth/me` | 내 정보 `{id, username, isAdmin}` (로그인) |
+| GET | `/auth/me` | 내 정보 `{id, username, nickname, isAdmin}` (로그인) |
 | PUT | `/auth/password` | `{currentPassword, newPassword}` 비밀번호 변경, 새 `{token, expiresAt, user}` (로그인) |
 | DELETE | `/auth/me` | `{password}` 회원 탈퇴 (204, 로그인) |
 | GET | `/product?page&size&name` | 물품 목록 (재료 포함) `{totalElements, content}` |

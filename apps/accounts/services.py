@@ -7,10 +7,10 @@ from apps.common.exceptions import BadRequest
 
 
 @transaction.atomic
-def signup(username, password):
+def signup(username, password, nickname):
     try:
         with transaction.atomic():
-            user = User.objects.create_user(username=username, password=password)
+            user = User.objects.create_user(username=username, password=password, nickname=nickname)
     except IntegrityError:
         raise BadRequest("이미 사용 중인 아이디입니다.") from None
     return issue_token(user)
