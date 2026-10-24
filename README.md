@@ -16,11 +16,13 @@ config/                 Django 설정, URL
 apps/common/            공통 (Nest 호환 에러 형식, 쿼리 파싱, 숫자 형식, 관리자 권한, 시퀀스 보정 마이그레이션)
 apps/accounts/          회원(user), 로그인 토큰 — /auth
 apps/products/          물품(product), 재료(material) — /product
-  recipes.py            레시피 읽기·검증 (DB에서 레시피를 읽어 계산기로 펼칠 수 있는지 확인)
+  recipes.py            레시피 읽기 (전체 레시피와 물품 id를 쿼리 2번으로 계산기 입력 형태로 읽는다)
 apps/markets/           시세(market) — /market
-apps/results/           계산 결과(result) — /result
+apps/results/           계산 결과(result) — /result, 데이터 점검 — /catalog/check
   calculator.py         핵심 계산 로직 (DB와 무관한 순수 모듈)
-  presenters.py         결과 응답 형식 (제작 개수 배율 포함)
+  diagnosis.py          카탈로그 진단 (차단 문제를 한 번에 모두 찾는 순수 모듈)
+  sync.py               시세·물품·결과 연결 (전역 잠금, 쓰기 전후 진단, 결과 동기화, 데이터 점검)
+  presenters.py         결과·점검 응답 형식 (제작 개수 배율 포함)
 apps/experiences/       레벨 경험치(experience), 호두나무 계산 — /experience
 tests/                  pytest
 ```
@@ -55,7 +57,7 @@ TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pytest
 docker stop myhome-test-pg
 ```
 
-잠금(select_for_update)과 트랜잭션 테스트(`tests/test_postgres_locking.py`)는 Postgres에서만 돈다. 리팩터링 전후로 한 번씩 돌린다.
+잠금(select_for_update)과 트랜잭션 테스트(`tests/test_postgres_locking.py`)는 대부분 Postgres에서만 돈다. 리팩터링 전후로 한 번씩 돌린다.
 
 테스트 설정(`config/test_settings.py`)은 `.env`의 `POSTGRES_*` 값을 쓰지 않는다. 운영 `.env` 값으로 테스트하지 않는다.
 
@@ -94,7 +96,9 @@ pg_restore --no-owner --no-acl -d "postgresql://<user>:<password>@<host>/<databa
 2. 입력하라고 나오는 값(`POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_NAME`)을 채운다.
    `DJANGO_SECRET_KEY`는 Render가 만들어 준다.
 3. 배포가 끝나면 `https://<서비스 이름>.onrender.com/`에서 `Hello World!`가 나오는지 확인한다.
-4. 데이터를 옮겼다면 Render의 Shell 탭(무료 플랜에서 안 되면 로컬에서 Neon 접속 정보로)에서 `python manage.py recalculate_results --create-missing`을 한 번 실행한다.
+4. 데이터를 옮겼다면 결과를 한 번 맞춘다. Render의 Shell 탭(무료 플랜에서 안 되면 로컬에서 Neon 접속 정보로)에서
+   `python manage.py recalculate_results --create-missing`(엄격 모드)을 실행하거나, 관리자 계정을 만든 뒤
+   관리 화면 '데이터 점검 → 결과 다시 맞추기'를 누른다. 차이는 아래 '2. 설정과 마이그레이션'의 3번을 본다.
 5. 관리자 계정을 만든다. Render의 Shell 탭(안 되면 로컬에서 `.env`에 Neon 접속 정보를 넣고)에서 `python manage.py createsuperuser`.
 6. 프론트엔드(Vercel) 프로젝트의 환경변수 `VITE_API_BASE_URL`을 이 주소로 설정하고 다시 배포한다.
 
@@ -105,7 +109,9 @@ pg_restore --no-owner --no-acl -d "postgresql://<user>:<password>@<host>/<databa
 
 ### 0. 전환 전 점검 (기존 DB에서 실행)
 
-레시피가 깨진 물품이 있으면 전환 후 시세 수정(PUT /market)이 400으로 막힌다. 아래 쿼리 결과가 없어야 한다.
+레시피가 깨진 물품이 있어도 전환 후 시세 수정(PUT /market)이나 다른 쓰기는 막히지 않는다. 다만 그 물품과,
+그 물품을 하위 물품으로 쓰는 물품은 결과를 계산할 수 없어 결과 목록과 계산기에서 빠진다. 아래 쿼리로 미리 찾아 두고,
+전환 뒤에는 관리자로 `GET /catalog/check`(관리 화면 '데이터 점검')를 열어 남은 문제를 확인한다.
 
 ```sql
 -- 물품으로 존재하지 않는 하위 물품
@@ -159,7 +165,10 @@ DB를 따로 운영한다면 같은 방식으로 `pg_dump` → PostgreSQL 16 서
    - Docker 이미지는 시작할 때 이 명령을 자동으로 실행한다.
 3. `python manage.py recalculate_results --create-missing` — **전환 직후 한 번 실행한다.**
    기존 서버의 시세 수정은 결과를 물품 id로 갱신해서 다른 물품의 결과 행을 덮어썼다. 그래서 저장된 결과가 틀려 있을 수 있다.
-   이 명령은 모든 결과를 현재 시세로 다시 계산하고, 결과가 없는 물품의 결과를 만든다. 실패하면 아무것도 저장하지 않고 원인 물품을 알려 준다.
+   이 명령은 모든 결과를 현재 시세로 다시 계산하고, 결과가 없는 물품의 결과를 만든다.
+   엄격 모드라서 계산할 수 없는 물품이 하나라도 있으면 아무것도 저장하지 않고 원인을 모두 알려 준다.
+   레시피를 바로 고칠 수 없으면 관리 화면 '데이터 점검 → 결과 다시 맞추기'(`POST /result`)를 누른다.
+   계산할 수 있는 결과는 모두 맞추고, 남은 문제는 '데이터 점검'에 보인다. 하위 물품부터 고친다.
 
 ### 롤백
 
@@ -197,15 +206,17 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 | PUT | `/auth/password` | `{currentPassword, newPassword}` 비밀번호 변경, 새 `{token, expiresAt, user}` (로그인) |
 | DELETE | `/auth/me` | `{password}` 회원 탈퇴 (204, 로그인) |
 | GET | `/product?page&size&name` | 물품 목록 (재료 포함) `{totalElements, content}` |
-| POST | `/product` | 물품 추가 (재료 포함) (관리자) |
-| POST | `/product/all` | `{products: [...]}` 일괄 추가 (이미 있는 물품은 건너뜀) (관리자) |
-| PUT | `/product` | 물품 수정 (보낸 필드만 수정, 재료는 통째로 교체) (관리자) |
+| POST | `/product` | 물품 추가 (재료 포함), 결과도 생성 (관리자) |
+| POST | `/product/all` | `{products: [...]}` 일괄 추가 (이미 있는 물품은 건너뜀), 새 물품 전부의 결과도 생성 (관리자) |
+| PUT | `/product` | 물품 수정 (보낸 필드만 수정, 재료는 통째로 교체), 이 물품과 상위 물품의 결과도 갱신 (관리자) |
 | DELETE | `/product` | `{ids: [...]}` 또는 `[id, ...]` 삭제 (재료·결과도 함께 삭제) (관리자) |
 | GET | `/market` | 시세 목록 |
-| PUT | `/market` | `[{id, name, price}]` 시세 수정/추가 후 전체 결과 재계산 (관리자) |
-| POST | `/result` | 결과가 없는 물품의 결과 생성 (관리자) |
+| PUT | `/market` | `[{id?, name?, price?}]` 시세 수정/추가 후 전체 결과 동기화. 이름을 바꾸면 그 이름을 쓰는 기본 재료도 바뀌고, 새 시세로 계산할 수 있게 된 물품의 결과도 생성. 모르는 id는 400 (관리자) |
+| DELETE | `/market` | `{ids: [...]}` 또는 `[id, ...]` 삭제, `{deletedIds}` (재료로 쓰이는 시세는 400, 없는 id는 무시) (관리자) |
+| POST | `/result` | 전체 동기화 (빠진 결과 생성 + 낡은 결과 제자리 갱신, 계산할 수 없는 물품은 건너뜀). 항상 201, 새로 만든 결과 행만 응답 (관리자) |
 | GET | `/result?page&size&name&count&tool&category` | 결과 목록 (`count`개 제작 기준) |
-| POST | `/result/calculator` | `{markets: [{name, price}]}` 입력 시세로 미리 계산 (저장 안 함, price가 null이면 0원) |
+| POST | `/result/calculator` | `{markets: [{name, price}]}` 입력 시세로 미리 계산 (저장 안 함, price가 null이면 0원). 결과가 없거나 서버 데이터 문제로 계산할 수 없는 물품은 건너뛰고, 입력에서 DB 시세를 뺀 경우만 400 |
+| GET | `/catalog/check` | 데이터 점검 `{summary, products, markets, problems}` (저장 안 함) (관리자) |
 | GET | `/experience` | 레벨별 경험치 |
 | GET | `/experience/walnut?presentLevel&presentExperience&objectiveLevel&productionPercent` | 호두나무 수확 횟수와 식물앰플 비용 |
 
@@ -219,7 +230,8 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 - 물품마다 펼친 결과를 한 번만 계산해 메모해 두고 재사용한다. 전체 결과 생성·재계산도 물품 수에 비례하는 시간에 끝난다.
 - 재료 순서는 기존 BFS와 같다 (얕은 단계 먼저, 같은 단계는 레시피 순서). 물품마다 '단계별 수량'을 메모해서 순서를 맞춘다.
 - 입력 데이터를 바꾸지 않는다. 기존에는 재료 객체의 수량을 직접 더해서 같은 요청에서 뒤에 계산되는 물품의 수량이 틀어졌다.
-- 잘못된 하위 재료명, 순환 참조, 시세 없는 재료는 무한 루프나 잘못된 저장 대신 400 에러로 알린다.
+- 잘못된 하위 재료명, 순환 참조, 시세 없는 재료는 무한 루프나 잘못된 저장 대신 에러(RecipeError)로 알린다.
+  계산기는 첫 오류에서 멈추므로, 저장 전 검사와 데이터 점검은 모든 문제를 한 번에 찾는 `diagnosis.py`가 맡는다.
 - 레시피에 같은 기본 재료가 여러 줄 있으면 한 줄로 합친다 (기존에는 최상위 레시피에서만 줄이 나뉘었다).
 
 ## 기존 대비 달라진 동작
@@ -227,16 +239,38 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 로그인(`/product/login` 대신 `/auth/login`)과 쓰기 API의 관리자 토큰을 빼면, 프론트엔드(my-home-frontend)가 쓰는
 정상 요청의 응답 형식은 그대로다. 응답에 키가 추가된 곳만 있다
 (결과 항목의 최상위 `category`, 물품 추가·수정 응답의 `id`/`materials`).
+새 엔드포인트(`DELETE /market`, `GET /catalog/check`)만 새 응답 모양을 쓴다. 에러 응답 형식은 바뀌지 않는다.
+
+**시세·물품·결과 연결** (`apps/results/sync.py`)
+- 물품 추가·일괄 추가·수정·삭제, 시세 수정·삭제가 성공하면 같은 트랜잭션 안에서 결과도 맞춰진다. 계산할 수 있는 모든 물품에
+  결과가 하나씩 있고, 그 값은 현재 레시피 × 현재 DB 시세와 같다. '결과 리스트 생성'(POST /result)을 따로 부르지 않아도 된다.
+- 결과는 지우고 다시 만들지 않고 제자리에서 고친다. 결과 id와 createdAt은 물품이 있는 동안 그대로이고,
+  updatedAt은 값이 실제로 바뀐 행만 바뀐다 (같은 값을 다시 저장하면 결과 UPDATE가 나가지 않는다).
+- 쓰기가 차단 문제를 **새로** 만들면 400이고 전부 취소된다. 차단 문제는 없는 하위 물품, 시세 없는 기본 재료, 순환 참조,
+  합계가 정수 컬럼 범위(약 21억)를 넘는 것, 계산할 수 없는 하위 물품을 쓰는 것이다.
+  메시지 하나에 모든 문제를 묶어 알린다 (예: `시세 정보가 없는 재료가 있습니다. (새물품: 은, 새물품: 금)`). 문제가 1건이면 기존 문구와 같다.
+- 시세 없는 기본 재료를 쓰는 물품은 이제 저장할 수 없다. 새 재료라면 PUT /market으로 시세를 먼저 추가하고 물품을 저장한다.
+- 이미 있던 문제(기존 데이터, DB 직접 수정)는 다른 쓰기를 막지 않는다. 그런 물품의 저장된 결과는 지우지 않고 마지막 값으로 두고,
+  데이터 점검(GET /catalog/check)에 보인다. 문제가 있는 물품도 새 문제를 만들지 않으면 수정할 수 있다.
+- 레시피는 물품·시세를 이름으로 가리키므로 이름 변경을 따라간다. 물품 이름을 바꾸면 하위 물품 재료(basic=False)가,
+  시세 이름을 바꾸면 기본 재료(basic=True)가 함께 바뀐다. 다른 레시피가 쓰는 물품이나 시세는 삭제할 수 없다.
+- 모든 카탈로그 쓰기(와 POST /result, 관리 명령)는 시세 행 전체를 id 순으로 잠그는 같은 전역 잠금을 가장 먼저 잡아 차례로 실행된다.
+  시세 테이블이 비어 있으면 잠글 행이 없다 (운영 시세는 비지 않으므로 다루지 않는다).
 
 **계산·저장**
-- 시세 수정(PUT /market) 시 DB의 **전체 시세**로 재계산하고 names/counts/prices/totalPrice를 모두 갱신한다. 결과가 없는 물품은 건너뛴다. 재계산이 실패하면 시세 저장도 취소된다.
+- 결과는 DB의 **전체 시세**로 계산하고 names/counts/prices/totalPrice를 모두 갱신한다.
+- 결과 생성(POST /result)은 전체 동기화이고 항상 201이다. 빠진 결과를 만들고 낡은 결과를 고치며, 계산할 수 없는 물품은 건너뛴다.
+  응답은 이번에 새로 만든 결과 행만이다 (없으면 `[]`). 기존 '추가할 결과가 없습니다.' 400은 없다.
+- 시세 수정(PUT /market)에 없는 id를 보내면 새 행을 만들지 않고 400이다 (`존재하지 않는 시세입니다. (id: 999)`).
 - 계산기(POST /result/calculator) 응답의 `id`는 결과 id다 (기존에는 물품 id로 덮어썼다). 결과는 레벨, 이름 순으로 정렬된다.
+  결과가 없는 물품과 서버 데이터 문제로 계산할 수 없는 물품은 목록에서 빠진다 (기존에는 하나만 있어도 모두에게 400).
+  입력에서 DB에 있는 시세를 뺀 경우만 400이다.
 - 결과 응답의 `totalPrice`는 재료 가격의 합이다. totalPrice 컬럼(정수)에는 반올림(.5 올림)해 저장한다. 기존에는 합계가 소수면 저장하다 500이 났다.
-  저장할 합계가 정수 컬럼 범위(약 21억)를 넘으면 결과 생성·재계산이 400이다. 저장하지 않는 계산기에는 이 제한이 없다.
+  저장할 합계가 정수 컬럼 범위(약 21억)를 넘는 물품은 결과를 저장하지 않는다 (쓰기가 새로 만들면 400). 저장하지 않는 계산기에는 이 제한이 없다.
 - 응답 숫자의 부동소수점 오차를 정리한다 (예: `0.30000000000000004` → `0.3`). 재료가 없는 물품의 결과 materials는 `[]`다.
 
 **물품**
-- 물품 추가·수정 시 레시피를 검증한다. 존재하지 않는 하위 물품이나 순환 참조가 있으면 400이다 (일괄 추가는 같은 업로드 안의 물품을 참조해도 된다).
+- 물품 추가·수정 시 레시피를 검증한다. 존재하지 않는 하위 물품, 시세 없는 기본 재료, 순환 참조가 새로 생기면 400이다 (일괄 추가는 같은 업로드 안의 물품을 참조해도 된다).
 - 물품 이름을 바꾸면 그 물품을 재료로 쓰는 다른 레시피의 재료 이름도 함께 바뀐다.
 - 물품 삭제 시 재료와 결과도 함께 삭제된다 (기존에는 FK 제약 때문에 실패했다). 다른 물품의 재료로 쓰이는 물품은 400으로 거절한다.
 - 삭제 본문으로 프론트엔드가 보내는 `{ids: [...]}`도 받는다 (기존 서버는 이 형식을 처리하지 못했다).
