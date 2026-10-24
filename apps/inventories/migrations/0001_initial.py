@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('count', models.PositiveIntegerField()),
-                ('market', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='+', to='markets.market')),
+                ('market', models.ForeignKey(db_constraint=False, on_delete=django.db.models.deletion.CASCADE, related_name='+', to='markets.market')),
                 ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='inventory_items', to=settings.AUTH_USER_MODEL)),
             ],
             options={

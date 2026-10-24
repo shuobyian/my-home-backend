@@ -15,8 +15,9 @@ def list_inventory(user):
 def update_inventory(user, items):
     """보낸 시세의 보유 개수만 바꾸고(0이면 지운다) 바뀐 뒤의 전체 보유 목록을 돌려준다. 보내지 않은 시세는 그대로 둔다.
 
-    ponytail: 검사한 뒤 커밋하기 전에 관리자가 그 시세를 지우면 외래 키 오류(500)가 난다. 시세 삭제는 드물고
-    재료로 쓰이지 않는 시세만 지울 수 있어서 잠그지 않는다. 문제가 되면 시세 행을 잠그고 검사한다.
+    시세 외래 키에 DB 제약이 없어서(models.InventoryItem 참고) 없는 시세는 여기서 거절한다.
+    ponytail: 검사한 뒤 커밋하기 전에 관리자가 그 시세를 지우면 시세 없는 행이 남는다. 목록은 시세와 INNER JOIN이라
+    보이지 않는다. 시세 삭제는 드물고 재료로 쓰이지 않는 시세만 지울 수 있어서 잠그지 않는다.
     """
     duplicated = sorted(pk for pk, n in Counter(item["market_id"] for item in items).items() if n > 1)
     if duplicated:
