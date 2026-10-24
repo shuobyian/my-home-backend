@@ -51,7 +51,11 @@ class UnknownMaterialError(RecipeError):
 
 
 class MissingPriceError(RecipeError):
-    pass
+    """시세가 없는 기본 재료. material은 그 재료 이름이다 (계산기 미리보기가 DB 시세와 비교할 때 쓴다)."""
+
+    def __init__(self, message: str, material: str):
+        super().__init__(message)
+        self.material = material
 
 
 class CircularRecipeError(RecipeError):
@@ -87,7 +91,8 @@ class CraftingCalculator:
     def _price(self, product_name: str, material_name: str) -> float:
         price = self._prices.get(material_name)
         if price is None:
-            raise MissingPriceError(f"시세 정보가 없는 재료가 있습니다. ({product_name}: {material_name})")
+            message = f"시세 정보가 없는 재료가 있습니다. ({product_name}: {material_name})"
+            raise MissingPriceError(message, material_name)
         return price
 
     def _expand(self, product_name: str) -> tuple[Quantities, ...]:

@@ -5,6 +5,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from apps.markets.models import Market
+from apps.results.calculator import CraftingCalculator, Ingredient
 from apps.results.models import Result
 from tests.factories import make_product
 
@@ -237,6 +238,16 @@ def test_create_results_invalid_sub_material_message(client, catalog):
 
     assert response.status_code == 400
     assert response.json()["message"] == "하위 재료에 잘못된 물품명이 있습니다. (불량품: 없는물품)"
+
+
+def test_result_matches_compares_stored_columns():
+    sheet = CraftingCalculator({"R": [Ingredient("나무", True, 0.25)]}, {"나무": 10}).calculate("R")
+    result = Result(names="나무", counts="0.25", prices="2.5", total_price=3)
+
+    assert Result.cost_fields_of(sheet) == ("나무", "0.25", "2.5", 3)
+    assert result.matches(sheet)
+    result.total_price = 2
+    assert not result.matches(sheet)
 
 
 def test_create_missing_results_only_adds_missing(client, catalog):

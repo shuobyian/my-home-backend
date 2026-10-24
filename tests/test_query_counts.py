@@ -5,7 +5,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.markets.models import Market
-from apps.products.recipes import load_recipes
+from apps.products.recipes import load_catalog, load_recipes
 from tests.factories import make_product
 
 pytestmark = pytest.mark.django_db
@@ -117,3 +117,12 @@ def test_recipes_are_loaded_in_recipe_order(catalog):
     material_queries = [query["sql"] for query in ctx.captured_queries if 'FROM "material"' in query["sql"]]
     assert len(material_queries) == 1
     assert 'ORDER BY "material"."product_id" ASC, "material"."id" ASC' in material_queries[0]
+
+
+def test_load_catalog_reads_recipes_and_ids_in_two_queries(catalog, django_assert_num_queries):
+    with django_assert_num_queries(2):
+        recipes, product_ids = load_catalog()
+
+    assert list(recipes) == ["판자", "식탁", "의자"]  # 물품 id 순
+    assert product_ids == {name: product.id for name, product in catalog.items()}
+    assert [ingredient.name for ingredient in recipes["식탁"]] == ["판자", "못"]
