@@ -10,6 +10,7 @@ urlpatterns = [
     path("", include("apps.markets.urls")),
     path("", include("apps.results.urls")),
     path("", include("apps.experiences.urls")),
+    path("", include("apps.inventories.urls")),
 ]
 
 handler400 = "apps.common.views.bad_request"

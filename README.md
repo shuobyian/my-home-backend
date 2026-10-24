@@ -24,6 +24,7 @@ apps/results/           계산 결과(result) — /result, 데이터 점검 — 
   sync.py               시세·물품·결과 연결 (전역 잠금, 쓰기 전후 진단, 결과 동기화, 데이터 점검)
   presenters.py         결과·점검 응답 형식 (제작 개수 배율 포함)
 apps/experiences/       레벨 경험치(experience), 호두나무 계산 — /experience
+apps/inventories/       회원별 보유 재료(기초 재료 개수) — /inventory
 tests/                  pytest
 ```
 
@@ -187,6 +188,9 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 - 회원가입할 때 게임 닉네임(`nickname`, 20자 이하, 앞뒤 공백 제거)을 꼭 받는다. 다른 회원과 같아도 된다.
   `createsuperuser`로 만든 관리자의 닉네임은 `관리자`다. 닉네임 추가 전에 있던 회원은 마이그레이션이 채운다
   (관리자 `관리자`, 일반 회원은 아이디 앞 20자).
+- 회원은 기초 재료(시세가 있는 최하위 재료)를 몇 개 가졌는지 저장할 수 있다(`/inventory`). 본인 것만 읽고 쓴다.
+  시세를 id로 가리켜서 시세 이름을 바꾸면 따라가고, 시세나 회원이 지워지면 함께 지워진다.
+  프론트는 결과·장바구니 합산·자유 모드 결과에서 필요 개수에서 보유 개수를 뺀 부족 개수를 함께 보여 준다.
 - 관리자는 `python manage.py createsuperuser`로 만든다. 이미 가입한 회원을 관리자로 바꾸려면
   `python manage.py shell -c "from apps.accounts.models import User; User.objects.filter(username='<아이디>').update(is_staff=True)"`.
 - 로그인·가입 응답의 `token`을 이후 요청 헤더에 `Authorization: Bearer <token>`으로 넣는다.
@@ -210,6 +214,8 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 | GET | `/auth/me` | 내 정보 `{id, username, nickname, isAdmin}` (로그인) |
 | PUT | `/auth/password` | `{currentPassword, newPassword}` 비밀번호 변경, 새 `{token, expiresAt, user}` (로그인) |
 | DELETE | `/auth/me` | `{password}` 회원 탈퇴 (204, 로그인) |
+| GET | `/inventory` | 내 보유 재료 `[{marketId, name, count}]` (시세 id 순, 개수가 0인 재료는 없음) (로그인) |
+| PUT | `/inventory` | `[{marketId, count}]` 보낸 시세의 보유 개수만 저장(0이면 삭제), 저장 뒤 전체 보유 재료. 없는 시세·중복 시세는 400 (로그인) |
 | GET | `/product?page&size&name` | 물품 목록 (재료 포함) `{totalElements, content}` |
 | POST | `/product` | 물품 추가 (재료 포함), 결과도 생성 (관리자) |
 | POST | `/product/all` | `{products: [...]}` 일괄 추가 (이미 있는 물품은 건너뜀), 새 물품 전부의 결과도 생성 (관리자) |
