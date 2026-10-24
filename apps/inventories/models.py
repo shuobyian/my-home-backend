@@ -14,7 +14,9 @@ class InventoryItem(models.Model):
     """
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="inventory_items")
-    market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name="+")
+    # 운영 DB의 market 테이블은 TypeORM에서 넘겨받으며 id 기본키 제약이 빠져 있어 DB 외래 키를 걸 수 없다.
+    # 그래서 DB 제약 없이 두고, 삭제 연쇄는 Django(on_delete)가, 없는 시세 검사는 services.update_inventory가 맡는다.
+    market = models.ForeignKey(Market, on_delete=models.CASCADE, related_name="+", db_constraint=False)
     count = models.PositiveIntegerField()
 
     class Meta:
