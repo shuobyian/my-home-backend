@@ -82,11 +82,13 @@ def test_calculator_preview_does_not_save(client, catalog):
     assert Result.objects.get(product=catalog["식탁"]).total_price == 80
 
 
-def test_calculator_requires_results_for_all_products(client, catalog):
+def test_calculator_skips_products_without_results(client, catalog):
     response = client.post("/result/calculator", {"markets": []}, format="json")
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "결과 정보가 없는 물품 (판자) 입니다."
+    # 의도적 변경: 예전에는 결과가 없는 물품이 하나라도 있으면 모든 사용자의 계산기가 400
+    # ('결과 정보가 없는 물품 (판자) 입니다.')이었다. 이제 그 물품만 목록에서 빠진다.
+    assert response.status_code == 201
+    assert response.json() == {"results": []}
 
 
 def test_calculator_reports_missing_price(client, catalog):

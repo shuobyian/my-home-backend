@@ -354,6 +354,34 @@ def test_post_result_creates_missing_and_refreshes_stale_in_place(client, catalo
     assert again.json() == []
 
 
+ALL_PRICES = [{"name": "나무", "price": 1}, {"name": "못", "price": 1}, {"name": "천", "price": 1}]
+
+
+def test_calculator_skips_products_without_results_or_broken(client, catalog):
+    assert client.post("/result").status_code == 201
+    make_product("추가", [("나무", True, 1)])  # 결과가 아직 없다
+    # 결과가 저장된 뒤 DB를 직접 고쳐 의자는 서버에도 없는 시세(은)를, 식탁은 없는 하위 물품을 쓰게 됐다.
+    catalog["의자"].materials.filter(name="천").update(name="은")
+    catalog["식탁"].materials.filter(name="판자").update(name="없는물품")
+
+    response = client.post("/result/calculator", {"markets": ALL_PRICES}, format="json")
+
+    assert response.status_code == 201
+    assert [(row["name"], row["totalPrice"]) for row in response.json()["results"]] == [("판자", 3)]
+
+
+def test_calculator_rejects_input_missing_db_market(client, catalog):
+    assert client.post("/result").status_code == 201
+    # 의자(레벨 3)는 서버에도 없는 시세(은)를 써서 건너뛴다. 식탁(레벨 5)은 입력에서 뺀 DB 시세(못) 때문에 400이다.
+    catalog["의자"].materials.filter(name="천").update(name="은")
+    markets = [market for market in ALL_PRICES if market["name"] != "못"]
+
+    response = client.post("/result/calculator", {"markets": markets}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "시세 정보가 없는 재료가 있습니다. (식탁: 못)"
+
+
 def test_walnut_reflects_ample_edit(client, experiences, ample):
     before = client.get("/experience/walnut", {"presentLevel": 60}).json()["ample"]["result"]
     ample_product = Product.objects.get(name="식물앰플-중급 가속")
