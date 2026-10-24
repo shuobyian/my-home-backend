@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "apps.markets",
     "apps.results",
     "apps.experiences",
+    "apps.inventories",
 ]
 
 MIDDLEWARE = [
