@@ -214,6 +214,88 @@ def test_edit_of_legacy_broken_product_allowed_without_new_problem(client, catal
     assert Result.objects.get(product=chair).total_price == 40
 
 
+def break_plank_and_chair(client, catalog):
+    """여러 단계에 걸친 이미 있던 문제를 만든다. 판자는 시세 없는 은을 쓰고, 의자는 DB에서 지운 천을 쓴다."""
+    assert client.post("/result").status_code == 201
+    catalog["판자"].materials.update(name="은")
+    Market.objects.filter(name="천").delete()
+    return results_by_name()
+
+
+def test_fixing_upper_product_while_sub_product_stays_broken_is_allowed(client, catalog):
+    before = break_plank_and_chair(client, catalog)
+    chair = catalog["의자"]
+
+    # 의자 자신의 문제(천)만 고친다. 의자는 전에도 판자를 썼고 전에도 계산할 수 없었으므로,
+    # 원인이 '고장 난 하위 물품'으로 바뀐 것은 새 문제가 아니다.
+    payload = {"id": chair.id, "materials": [sub("판자", 1), basic("못", 2)]}
+    response = client.put("/product", payload, format="json")
+
+    assert response.status_code == 200, response.json()
+    assert sorted(chair.materials.values_list("name", flat=True)) == ["못", "판자"]
+    # 판자가 아직 고장 나 있어 의자는 계산할 수 없다. 저장된 결과는 마지막 값 그대로다.
+    assert results_by_name() == before
+
+    # 아래 물품(판자)까지 고치면 위 물품의 결과도 함께 다시 계산한다.
+    response = client.put("/product", {"id": catalog["판자"].id, "materials": [basic("나무", 3)]}, format="json")
+    assert response.status_code == 200, response.json()
+    assert totals() == {"판자": 30, "식탁": 80, "의자": 40}
+
+
+def test_adding_missing_market_while_sub_product_stays_broken_is_allowed(client, catalog):
+    before = break_plank_and_chair(client, catalog)
+
+    # 점검 화면 힌트대로 빠진 시세를 다시 넣는다. 이미 있던 판자 문제로는 거절하지 않는다 (4.3의 6단계).
+    response = client.put("/market", [{"name": "천", "price": 7}], format="json")
+
+    assert response.status_code == 200, response.json()
+    assert Market.objects.filter(name="천").exists()
+    assert results_by_name() == before
+
+
+def test_new_product_awaited_by_legacy_broken_product_can_be_created(client, catalog):
+    catalog["판자"].materials.update(name="은")
+    # 이미 있던 문제: Q·R은 아직 없는 물품(X, Y)과 고장 난 판자를 하위 물품으로 쓴다.
+    make_product("Q", [("X", False, 1), ("판자", False, 1)])
+    make_product("R", [("Y", False, 1), ("판자", False, 1)])
+
+    response = client.post("/product", product_payload("X", [basic("나무", 1)]), format="json")
+    assert response.status_code == 201, response.json()
+
+    response = client.post("/product/all", {"products": [product_payload("Y", [basic("못", 1)])]}, format="json")
+    assert response.status_code == 201, response.json()
+
+    # 새 물품은 계산할 수 있다. Q·R은 여전히 판자 때문에 계산할 수 없다.
+    assert totals() == {"X": 10, "Y": 5}
+
+
+def test_computable_product_newly_using_broken_sub_product_is_still_rejected(client, catalog):
+    # 이미 계산할 수 없던 물품만 너그럽게 본다. 계산할 수 있던 물품이 고장 난 하위 물품을 쓰게 되면 새 문제다.
+    box = make_product("상자", [("나무", True, 1)])
+    assert client.post("/result").status_code == 201
+    catalog["판자"].materials.update(name="은")
+
+    response = client.put("/product", {"id": box.id, "materials": [sub("판자", 1)]}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == (
+        "시세 정보가 없는 재료가 있습니다. (판자: 은) 하위 물품에 문제가 있어 계산할 수 없습니다. (상자 ← 판자)"
+    )
+    assert list(box.materials.values_list("name", flat=True)) == ["나무"]
+
+
+def test_partial_fix_of_legacy_cycle_is_allowed(client, wood):
+    # 이미 있던 순환 A ↔ B ↔ C에서 B → A 간선만 끊는다. A는 순환 구성원에서 '하위 물품 문제'로 바뀔 뿐이다.
+    make_product("A", [("B", False, 1)])
+    b = make_product("B", [("A", False, 1), ("C", False, 1)])
+    make_product("C", [("B", False, 1)])
+
+    response = client.put("/product", {"id": b.id, "materials": [sub("C", 1)]}, format="json")
+
+    assert response.status_code == 200, response.json()
+    assert list(b.materials.values_list("name", flat=True)) == ["C"]
+
+
 def test_market_price_overflow_rejected_and_new_market_rolled_back(client, catalog):
     assert client.post("/result").status_code == 201
     before = results_by_name()

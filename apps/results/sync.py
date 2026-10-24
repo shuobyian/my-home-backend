@@ -1,7 +1,7 @@
 """시세·물품·결과를 잇는 곳: 카탈로그 쓰기의 전역 잠금, 쓰기 전후 진단, 결과 동기화.
 
 모든 카탈로그 쓰기 서비스(물품 추가·수정·삭제, 시세 수정)는 자기 트랜잭션 안에서 같은 흐름을 따른다.
-    before = begin_catalog_change()              # 잠금 → 레시피·시세 읽기 → 진단
+    before = begin_catalog_change()              # 잠금 → 레시피·시세 읽기 → 진단 → 이미 있던 문제의 키
     ... 시세/물품/재료 쓰기 ...
     finish_catalog_change(before, focus=[...])   # 다시 진단 → 새 차단 문제면 400(전부 롤백) → 결과 동기화
 
@@ -23,7 +23,13 @@ from apps.common.exceptions import BadRequest
 from apps.experiences.services import AMPLE_PRODUCT_NAME
 from apps.markets.models import Market
 from apps.products.recipes import load_catalog
-from apps.results.diagnosis import ERROR_CODES, diagnose, rejection_message, select_rejection
+from apps.results.diagnosis import (
+    BLOCKED_BY_SUB_PRODUCT,
+    ERROR_CODES,
+    diagnose,
+    rejection_message,
+    select_rejection,
+)
 from apps.results.models import Result
 
 SAVE_CONFLICT_MESSAGE = "결과를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요."
@@ -119,13 +125,23 @@ def lock_catalog():
 
 
 def begin_catalog_change():
-    """카탈로그 쓰기를 시작한다. 전역 잠금을 잡고 쓰기 전의 차단 문제 키를 돌려준다 (finish_catalog_change에 넘긴다)."""
+    """카탈로그 쓰기를 시작한다. 전역 잠금을 잡고 '이미 있던 문제'의 키를 돌려준다 (finish_catalog_change에 넘긴다).
+
+    쓰기 전의 차단 문제 키에, 쓰기 전에 이미 계산할 수 없던 물품마다 BLOCKED_BY_SUB_PRODUCT 키를 더한다.
+    그런 물품은 자기 문제만 고치고 이미 고장 난 하위 물품을 그대로 쓰면 원인이 '하위 물품 문제'로 바뀌는데,
+    이것은 새 문제가 아니다 (I6). 쓰기 전에 계산할 수 있던 물품이 막히면 지금처럼 새 문제로 거절한다.
+    """
     lock_catalog()
-    return diagnose(*_load()).blocking_keys
+    recipes, product_ids, prices = _load()
+    before = diagnose(recipes, product_ids, prices)
+    already_blocked = {(BLOCKED_BY_SUB_PRODUCT, product_ids[name], None) for name in before.uncomputable}
+    return before.blocking_keys | already_blocked
 
 
 def finish_catalog_change(before_keys, *, focus=()):
     """카탈로그 쓰기를 마친다. 이번 쓰기가 새 차단 문제를 만들었으면 400, 아니면 모든 결과를 동기화한다.
+
+    before_keys: begin_catalog_change()가 돌려준 이미 있던 문제의 키. 여기에 없는 차단 키가 새 문제다.
 
     focus: 이번에 쓴 물품 이름. 거절 메시지에 그 물품의 막힘을 적고, 순환 경로를 그 물품부터 적는다.
     400(BadRequest)은 호출한 서비스의 트랜잭션을 롤백해서 시세·물품 쓰기까지 함께 취소한다.
