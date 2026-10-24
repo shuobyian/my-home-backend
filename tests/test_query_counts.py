@@ -5,7 +5,8 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.markets.models import Market
-from apps.products.recipes import load_recipes
+from apps.products.models import Product
+from apps.products.recipes import load_catalog, load_recipes
 from tests.factories import make_product
 
 pytestmark = pytest.mark.django_db
@@ -58,6 +59,9 @@ def test_read_endpoints_query_count(client, django_assert_num_queries, n):
         client.get("/product")
     with django_assert_num_queries(5):
         client.post("/result/calculator", {"markets": [{"name": "나무", "price": 1}]}, format="json")
+    # 레시피 2 + 시세 1 + 결과 1
+    with django_assert_num_queries(4):
+        client.get("/catalog/check")
 
 
 def test_walnut_query_count(client, experiences, ample, django_assert_num_queries):
@@ -68,15 +72,25 @@ def test_walnut_query_count(client, experiences, ample, django_assert_num_querie
 def test_write_endpoints_query_count_does_not_grow(client):
     # 서로 다른 parametrize 인스턴스끼리는 비교할 수 없으므로 한 함수 안에서 두 번 잰다.
     # savepoint 구성이 바뀌어도 깨지지 않도록 정확한 숫자 대신 두 회차가 같은지만 본다.
-    def measure_writes(wood_id, names):
+    # 결과는 값이 바뀐 행만 갱신하므로, 회차마다 시세와 판자 레시피를 다르게 바꿔야 두 회차 모두 결과 UPDATE가 나간다.
+    def measure_writes(wood_id, plank_id, value, names, new_name):
+        plank = {"id": plank_id, "materials": [{"name": "나무", "basic": True, "count": value}]}
+        # 삭제 대상: 아무도 쓰지 않는 시세와, 다른 레시피가 쓰지 않는 물품
+        spare_market = Market.objects.create(name=f"여분{value}", price=1)
+        spare_product = make_product(f"삭제{value}", [("나무", True, 1)])
         counts = []
         for send, status in [
             (lambda: client.post("/result"), 201),
-            (lambda: client.put("/market", [{"id": wood_id, "price": 2}], format="json"), 200),
+            (lambda: client.put("/market", [{"id": wood_id, "price": value}], format="json"), 200),
             (
                 lambda: client.post("/product/all", {"products": [upload_row(name) for name in names]}, format="json"),
                 201,
             ),
+            (lambda: client.post("/product", upload_row(new_name), format="json"), 201),
+            # 판자를 바꾸면 판자를 재료로 쓰는 물품 전부(n개)의 결과가 바뀐다.
+            (lambda: client.put("/product", plank, format="json"), 200),
+            (lambda: client.delete("/market", {"ids": [spare_market.id]}, format="json"), 200),
+            (lambda: client.delete("/product", [spare_product.id], format="json"), 200),
         ]:
             response, count = measure(send)
             assert response.status_code == status
@@ -86,10 +100,11 @@ def test_write_endpoints_query_count_does_not_grow(client):
     setup_base()
     make_products(0, 3)
     wood_id = Market.objects.get(name="나무").id
-    first = measure_writes(wood_id, [f"업로드{i:03d}" for i in range(3)])
+    plank_id = Product.objects.get(name="판자").id
+    first = measure_writes(wood_id, plank_id, 2, [f"업로드{i:03d}" for i in range(3)], "단건1")
 
     make_products(3, 30)
-    second = measure_writes(wood_id, [f"업로드{i:03d}" for i in range(3, 33)])
+    second = measure_writes(wood_id, plank_id, 3, [f"업로드{i:03d}" for i in range(3, 33)], "단건2")
 
     assert first == second
 
@@ -117,3 +132,12 @@ def test_recipes_are_loaded_in_recipe_order(catalog):
     material_queries = [query["sql"] for query in ctx.captured_queries if 'FROM "material"' in query["sql"]]
     assert len(material_queries) == 1
     assert 'ORDER BY "material"."product_id" ASC, "material"."id" ASC' in material_queries[0]
+
+
+def test_load_catalog_reads_recipes_and_ids_in_two_queries(catalog, django_assert_num_queries):
+    with django_assert_num_queries(2):
+        recipes, product_ids = load_catalog()
+
+    assert list(recipes) == ["판자", "식탁", "의자"]  # 물품 id 순
+    assert product_ids == {name: product.id for name, product in catalog.items()}
+    assert [ingredient.name for ingredient in recipes["식탁"]] == ["판자", "못"]

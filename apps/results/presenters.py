@@ -1,6 +1,7 @@
-"""결과 응답 모양 만들기 (기존 parseResult와 같은 응답 형식)."""
+"""결과 응답 모양 만들기 (기존 parseResult와 같은 응답 형식)와 데이터 점검 응답 모양."""
 
 import math
+from collections import Counter
 
 from apps.common.dates import js_datetime
 from apps.common.numbers import normalize
@@ -51,5 +52,42 @@ def present_result(result, sheet: CostSheet | None = None, count=1):
                 "count": normalize(material.count * count),
             }
             for material in sheet.materials
+        ],
+    }
+
+
+def present_catalog_check(check):
+    """데이터 점검(GET /catalog/check) 응답. 키와 키 순서는 프론트엔드(types/catalog.ts)와 맞춘다."""
+    severities = Counter(problem.severity for problem in check.problems)
+    return {
+        "summary": {
+            "products": len(check.products),
+            "markets": len(check.markets),
+            "results": check.results,
+            "errors": severities["error"],
+            "warnings": severities["warning"],
+            "infos": severities["info"],
+        },
+        "products": [
+            {"id": product.id, "name": product.name, "status": product.status, "resultId": product.result_id}
+            for product in check.products
+        ],
+        "markets": [
+            {"id": market.id, "name": market.name, "price": market.price, "usedBy": list(market.used_by)}
+            for market in check.markets
+        ],
+        "problems": [
+            {
+                "code": problem.code,
+                "severity": problem.severity,
+                "productId": problem.product_id,
+                "productName": problem.product_name,
+                "material": problem.material,
+                "marketId": problem.market_id,
+                "related": list(problem.related),
+                "hint": problem.hint,
+                "message": problem.message,
+            }
+            for problem in check.problems
         ],
     }

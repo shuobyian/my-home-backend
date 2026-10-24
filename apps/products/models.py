@@ -74,7 +74,7 @@ def materials_prefetch(lookup="materials"):
     """재료를 id 순(= 레시피 순서)으로 읽는 Prefetch. 응답의 물품 재료(materials) 순서가 이 정렬에 달려 있다.
 
     쓰는 곳마다 lookup 경로가 달라서('materials', 'product__materials') 모듈 상수 대신 함수로 둔다.
-    계산기용 레시피는 apps.products.recipes.load_recipes가 같은 기준(product_id, id 순)으로 따로 읽으므로
+    계산기용 레시피는 apps.products.recipes.load_catalog가 같은 기준(product_id, id 순)으로 따로 읽으므로
     정렬 기준을 바꿀 때 함께 고친다.
     """
     return models.Prefetch(lookup, queryset=Material.objects.order_by("id"))

@@ -54,11 +54,22 @@ class Result(models.Model):
         materials = tuple(map(MaterialCost, names, counts, prices))
         return CostSheet(materials, sum(material.price for material in materials))
 
+    @staticmethod
+    def cost_fields_of(sheet: CostSheet) -> tuple[str, str, str, int]:
+        """CostSheet를 저장할 컬럼 값 (names, counts, prices, total_price)으로 바꾼다."""
+        return (
+            ",".join(material.name for material in sheet.materials),
+            join_numbers(material.count for material in sheet.materials),
+            join_numbers(material.price for material in sheet.materials),
+            round_half_up(sheet.total_price),
+        )
+
     def apply_cost_sheet(self, sheet: CostSheet) -> None:
-        self.names = ",".join(material.name for material in sheet.materials)
-        self.counts = join_numbers(material.count for material in sheet.materials)
-        self.prices = join_numbers(material.price for material in sheet.materials)
-        self.total_price = round_half_up(sheet.total_price)
+        self.names, self.counts, self.prices, self.total_price = self.cost_fields_of(sheet)
+
+    def matches(self, sheet: CostSheet) -> bool:
+        """저장된 4개 컬럼이 sheet로 저장할 값과 같은지 본다. 다르면 결과가 낡은 것이다."""
+        return (self.names, self.counts, self.prices, self.total_price) == self.cost_fields_of(sheet)
 
 
 def _pad(values, length):

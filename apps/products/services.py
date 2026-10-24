@@ -5,8 +5,8 @@ from rest_framework.exceptions import ValidationError
 
 from apps.common.exceptions import BadRequest
 from apps.products.models import Material, Product
-from apps.products.recipes import check_recipes
 from apps.products.serializers import ProductInputSerializer
+from apps.results.sync import begin_catalog_change, finish_catalog_change
 
 DUPLICATE_PRODUCT_MESSAGE = "이미 추가된 물품입니다."
 
@@ -20,10 +20,12 @@ def list_products(name=None):
 
 @transaction.atomic
 def create_product(data):
+    """물품을 재료와 함께 추가하고 결과도 만든다. 새 차단 문제(시세 없는 재료, 없는 하위 물품 등)가 생기면 400."""
+    before = begin_catalog_change()
     if Product.objects.filter(name=data["name"]).exists():
         raise BadRequest(DUPLICATE_PRODUCT_MESSAGE)
     product = _insert_products_with_materials([data])[0]
-    check_recipes([product.name])
+    finish_catalog_change(before, focus=[product.name])
     return Product.objects.with_materials().get(pk=product.pk)
 
 
@@ -32,25 +34,33 @@ def bulk_create_products(rows):
     """업로드한 물품 중 아직 없는 물품만 재료와 함께 추가한다.
 
     프론트엔드는 새 물품만이 아니라 로컬 카탈로그 전체를 보낸다. 이미 있는 물품은 건너뛰므로 검증도 하지 않는다
-    (저장하지 않을 오래된 행 하나 때문에 업로드 전체가 막히지 않게).
+    (저장하지 않을 오래된 행 하나 때문에 업로드 전체가 막히지 않게). 새 물품끼리는 서로를 하위 물품으로 쓸 수 있고,
+    새 물품 전부의 결과도 만든다.
     """
     names = [_row_name(row) for row in rows]
     duplicated = sorted(name for name, count in Counter(names).items() if name and count > 1)
     if duplicated:
         raise BadRequest(f"업로드 목록에 중복된 물품명이 있습니다. ({', '.join(duplicated)})")
 
+    # 잠금을 잡은 뒤에 기존 이름을 읽어야, 동시에 들어온 업로드와 같은 물품을 두 번 넣으려다 실패하지 않는다.
+    before = begin_catalog_change()
     existing = set(Product.objects.filter(name__in=[name for name in names if name]).values_list("name", flat=True))
     new_rows = [(index, row) for index, (row, name) in enumerate(zip(rows, names, strict=True)) if name not in existing]
     if not new_rows:
         raise BadRequest("새로 추가할 물품이 없습니다.")
     products = _insert_products_with_materials(_validate_new_rows(new_rows))
-    check_recipes([product.name for product in products])
+    finish_catalog_change(before, focus=[product.name for product in products])
     return list(Product.objects.with_materials().filter(pk__in=[product.pk for product in products]).order_by("id"))
 
 
 @transaction.atomic
 def update_product(data):
+    """물품과 재료를 고치고, 이 물품과 이 물품을 (몇 단계든) 재료로 쓰는 물품의 결과를 제자리에서 다시 계산한다.
+
+    이미 문제가 있던 물품도 새 문제를 만들지 않으면 고칠 수 있다.
+    """
     materials = data.pop("materials")
+    before = begin_catalog_change()
     product = Product.objects.select_for_update().filter(pk=data.pop("id")).first()
     if product is None:
         raise BadRequest("존재하지 않는 물품입니다.")
@@ -67,14 +77,16 @@ def update_product(data):
 
     product.materials.all().delete()
     _create_materials(product, materials)
-    check_recipes([product.name])
+    finish_catalog_change(before, focus=[product.name])
     return Product.objects.with_materials().get(pk=product.pk)
 
 
 @transaction.atomic
 def delete_products(ids):
     """ids 중 찾아서 삭제한 물품 id 집합을 돌려준다."""
-    products = dict(Product.objects.select_for_update().filter(pk__in=ids).values_list("pk", "name"))
+    before = begin_catalog_change()
+    # 여러 물품을 잠그므로 항상 id 순서로 잠가 교착을 피한다.
+    products = dict(Product.objects.select_for_update().filter(pk__in=ids).order_by("id").values_list("pk", "name"))
     references = list(
         Material.objects.filter(basic=False, name__in=products.values())
         .exclude(product_id__in=products)
@@ -89,6 +101,7 @@ def delete_products(ids):
 
     # 재료(material)와 결과(result)는 CASCADE로 함께 지워진다.
     Product.objects.filter(pk__in=products).delete()
+    finish_catalog_change(before)
     return set(products)
 
 

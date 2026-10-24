@@ -130,8 +130,11 @@ def test_unknown_sub_product_raises_instead_of_infinite_loop():
 
 
 def test_missing_price_raises():
-    with pytest.raises(MissingPriceError, match="R: 금"):
+    with pytest.raises(MissingPriceError, match="R: 금") as error:
         CraftingCalculator({"R": [basic("금", 1)]}, {}).calculate("R")
+
+    # 계산기 미리보기가 DB 시세에 있는 재료인지 비교할 때 쓴다.
+    assert error.value.material == "금"
 
 
 @pytest.mark.parametrize(

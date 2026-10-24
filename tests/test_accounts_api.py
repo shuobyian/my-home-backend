@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import AuthToken, User
-from apps.results.services import create_missing_results
+from apps.results.sync import sync_all_results
 
 pytestmark = pytest.mark.django_db
 
@@ -307,13 +307,16 @@ def test_withdraw_deletes_member_and_tokens():
 
 # 관리자 권한
 
+# 관리자 전용 API. 데이터 점검(GET /catalog/check)은 조회지만 관리 화면 전용이라 같은 규칙이다.
 WRITE_REQUESTS = [
     ("post", "/product", {}),
     ("put", "/product", {}),
     ("delete", "/product", {"ids": [1]}),
     ("post", "/product/all", {"products": []}),
     ("put", "/market", []),
+    ("delete", "/market", {"ids": [1]}),
     ("post", "/result", None),
+    ("get", "/catalog/check", None),
 ]
 
 
@@ -343,10 +346,11 @@ def test_admin_can_write_with_login_token(catalog):
     assert response.json()["user"]["isAdmin"] is True
     assert admin.post("/result").status_code == 201
     assert admin.put("/market", [{"name": "새재료", "price": 3}], format="json").status_code == 200
+    assert admin.get("/catalog/check").status_code == 200
 
 
 def test_public_api_does_not_need_login(catalog, experiences):
-    create_missing_results()
+    sync_all_results()
     client = APIClient()
 
     assert client.get("/product").status_code == 200

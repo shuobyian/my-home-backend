@@ -16,3 +16,14 @@ class MarketUpdateSerializer(serializers.Serializer):
     id = Int32Field(required=False)
     name = CsvSafeNameField(required=False)
     price = Int32Field(required=False)
+
+
+class MarketIdsSerializer(serializers.Serializer):
+    """DELETE /market 본문. DELETE /product(ProductIdsSerializer)처럼 {"ids": [...]}와 [...]를 둘 다 받는다."""
+
+    ids = serializers.ListField(child=Int32Field())
+
+    def to_internal_value(self, data):
+        if isinstance(data, list):
+            data = {"ids": data}
+        return super().to_internal_value(data)

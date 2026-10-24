@@ -56,14 +56,51 @@ def test_market_validation_messages(client, catalog, items, message):
     assert response.json()["message"] == message
 
 
-def test_unknown_market_id_creates_new_row(client, catalog):
-    # 현재 동작 고정. 의도적으로 바꾸면 이 테스트도 함께 수정한다.
+def test_unknown_market_id_is_rejected(client, catalog):
+    # 의도적 변경: 예전에는 모르는 id를 새 행으로 만들었다. 다른 관리자가 지운 시세를 고치면 같은 시세가
+    # 새 id로 되살아나므로, 이제 400으로 거절하고 아무것도 저장하지 않는다.
     response = put_markets(client, [{"id": 999, "name": "금", "price": 1}])
 
+    assert response.status_code == 400
+    assert response.json()["message"] == "존재하지 않는 시세입니다. (id: 999)"
+    assert not Market.objects.filter(name="금").exists()
+
+
+def test_unknown_market_ids_are_listed_in_request_order_before_other_checks(client, catalog):
+    wood = Market.objects.get(name="나무")
+    items = [{"price": 1}, {"id": 999, "price": 1}, {"id": wood.id, "price": 2}, {"id": 998}, {"id": 999}]
+
+    response = put_markets(client, items)
+
+    # 새 시세의 name 누락({"price": 1})보다 모르는 id를 먼저 알린다. 같은 id는 한 번만 적는다.
+    assert response.status_code == 400
+    assert response.json()["message"] == "존재하지 않는 시세입니다. (id: 999, 998)"
+    wood.refresh_from_db()
+    assert wood.price == 10
+
+
+def test_delete_markets_accepts_bare_id_list(client, catalog):
+    gold = Market.objects.create(name="금", price=1000)
+
+    response = client.delete("/market", [gold.id], format="json")
+
     assert response.status_code == 200
-    created_id = response.json()[0]["id"]
-    assert created_id == Market.objects.get(name="금").id
-    assert created_id != 999
+    assert response.json() == {"deletedIds": [gold.id]}
+    assert not Market.objects.filter(pk=gold.id).exists()
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ({}, "ids: 이 필드는 필수 항목입니다."),
+        ({"ids": ["x"]}, "ids.0: 유효한 정수를 입력하세요."),
+    ],
+)
+def test_delete_markets_validation_messages(client, catalog, body, message):
+    response = client.delete("/market", body, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == message
 
 
 def test_update_markets_response_keeps_request_order(client, catalog):
@@ -77,16 +114,19 @@ def test_update_markets_response_keeps_request_order(client, catalog):
     assert (wood.name, wood.price) == ("나무", 3)
 
 
-def test_update_markets_does_not_create_missing_results(client, catalog):
+def test_update_markets_creates_missing_computable_results(client, catalog):
     client.post("/result")
     # '은'은 시세가 없는 재료다.
     extra = make_product("은세공", [("은", True, 1)])
+    stand = make_product("받침", [("나무", True, 1)])
     wood = Market.objects.get(name="나무")
 
     response = put_markets(client, [{"id": wood.id, "price": 20}])
 
-    # 200이어야 '실패해서 안 생겼다'가 아니라 '건너뛰어서 안 생겼다'가 된다.
+    # 의도적 변경: 시세를 저장하면 결과가 없던 물품 중 계산할 수 있는 것의 결과도 만든다 (결과 리스트에서 빠지지 않게).
+    # 200이어야 은세공이 '실패해서 안 생겼다'가 아니라 '건너뛰어서 안 생겼다'가 된다.
     assert response.status_code == 200
+    assert Result.objects.get(product=stand).total_price == 20
     assert not Result.objects.filter(product=extra).exists()
 
 
@@ -107,27 +147,33 @@ def test_update_markets_touches_updated_at_keeps_created_at(client, catalog):
         assert created_at == before[result_id]
 
 
-def test_update_markets_rollback_discards_new_market(client, catalog):
+def test_update_markets_with_preexisting_problem_keeps_new_market(client, catalog):
     client.post("/result")
-    # 천을 쓰는 결과는 의자 하나뿐이라 순회 순서와 상관없이 메시지가 정해진다.
+    # 의자가 쓰는 천 시세를 DB에서 지웠다 (이미 있던 문제).
     Market.objects.filter(name="천").delete()
 
     response = put_markets(client, [{"name": "금", "price": 1}])
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "시세 정보가 없는 재료가 있습니다. (의자: 천)"
-    assert not Market.objects.filter(name="금").exists()
+    # 의도적 변경: 예전에는 이미 있던 문제 때문에 400이고 금도 저장되지 않았다.
+    # 이제 이번 쓰기가 새로 만든 문제만 거절한다. 새로 생긴 문제로 롤백되는 경로는 test_catalog_sync에서 본다.
+    assert response.status_code == 200
+    assert Market.objects.filter(name="금").exists()
 
 
 def test_empty_market_update_still_recalculates(client, catalog):
     client.post("/result")
     Market.objects.filter(name="천").delete()
+    Market.objects.filter(name="나무").update(price=20)
+    chair = Result.objects.values("names", "counts", "prices", "total_price").get(product=catalog["의자"])
 
-    # 현재 동작 고정. 빈 목록도 재계산을 실행한다.
+    # 현재 동작 고정. 빈 목록도 결과 동기화를 실행한다.
+    # 의도적 변경: 이미 있던 문제(천 시세 없음)로는 거절하지 않으므로 200이다 (예전에는 400).
     response = put_markets(client, [])
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "시세 정보가 없는 재료가 있습니다. (의자: 천)"
+    assert response.status_code == 200
+    assert response.json() == []
+    assert Result.objects.get(product=catalog["판자"]).total_price == 60
+    assert Result.objects.values("names", "counts", "prices", "total_price").get(product=catalog["의자"]) == chair
 
 
 def test_lock_all_locks_every_market_in_id_order():

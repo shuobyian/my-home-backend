@@ -54,7 +54,8 @@ def test_list_without_size_returns_everything(client, catalog):
     assert len(client.get("/product/").json()["content"]) == 3
 
 
-def test_create_product(client, db):
+def test_create_product(client, wood):
+    # 시세 없는 기본 재료(나무)를 쓰는 물품은 이제 거절하므로 시세 '나무'를 둔다 (wood fixture).
     response = client.post("/product", product_payload(), format="json")
 
     assert response.status_code == 201
@@ -186,7 +187,8 @@ def test_create_product_with_unknown_sub_product_is_rejected(client, catalog):
     assert not Product.objects.filter(name="새물품").exists()
 
 
-def test_bulk_create_allows_references_within_upload(client, db):
+def test_bulk_create_allows_references_within_upload(client, wood):
+    # 시세 없는 기본 재료(나무)를 쓰는 물품은 이제 거절하므로 시세 '나무'를 둔다 (wood fixture).
     products = [
         product_payload("상위", materials=[{"name": "하위", "basic": False, "count": 2}]),
         product_payload("하위"),
@@ -394,7 +396,8 @@ def test_bulk_create_duplicate_names_message_is_sorted_and_stripped(client, db):
     assert response.json()["message"] == "업로드 목록에 중복된 물품명이 있습니다. (A, B)"
 
 
-def test_create_product_defaults_category_to_normal(client, db):
+def test_create_product_defaults_category_to_normal(client, wood):
+    # 시세 없는 기본 재료(나무)를 쓰는 물품은 이제 거절하므로 시세 '나무'를 둔다 (wood fixture).
     payload = product_payload()
     del payload["category"]
 

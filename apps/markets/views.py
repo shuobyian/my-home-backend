@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 
 from apps.common.permissions import IsAdminOrReadOnly
 from apps.markets import services
-from apps.markets.serializers import MarketSerializer, MarketUpdateSerializer
+from apps.markets.serializers import MarketIdsSerializer, MarketSerializer, MarketUpdateSerializer
 
 
 class MarketView(APIView):
@@ -17,3 +17,9 @@ class MarketView(APIView):
         serializer.is_valid(raise_exception=True)
         markets = services.update_markets(serializer.validated_data)
         return Response(MarketSerializer(markets, many=True).data)
+
+    def delete(self, request):
+        serializer = MarketIdsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        deleted = services.delete_markets(serializer.validated_data["ids"])
+        return Response({"deletedIds": deleted})

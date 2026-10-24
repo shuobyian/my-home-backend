@@ -28,6 +28,12 @@ def anon_client():
 
 
 @pytest.fixture
+def wood(db):
+    """시세 '나무' 하나. 시세 없는 기본 재료를 쓰는 물품은 저장할 수 없으므로 물품만 따로 추가하는 테스트에 쓴다."""
+    return Market.objects.create(name="나무", price=10)
+
+
+@pytest.fixture
 def catalog(db):
     """시세 3개, 물품 3개(판자 → 식탁, 의자)로 된 기본 데이터."""
     Market.objects.bulk_create([Market(name="나무", price=10), Market(name="못", price=5), Market(name="천", price=7)])
