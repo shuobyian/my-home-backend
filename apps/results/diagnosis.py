@@ -9,7 +9,8 @@
 
 앞의 셋이 근본 원인이다. 계산할 수 없는 물품마다 그 이유(자기와 하위 트리의 근본 원인, 또는 자기 합계 초과)를
 causes에 모은다. 쓰기 API는 쓰기 전후의 blocking_keys를 비교해 이번 쓰기가 새로 만든 문제만 거절한다
-(apps.results.sync). 키는 물품 id 기준이라 이름을 바꿔도 같은 문제는 같은 키다.
+(apps.results.sync). 키는 물품 id 기준이라 이름을 바꿔도 같은 문제는 같은 키다. 순환 키는 강연결요소 구성원
+기준이라 순회 시작점이나 레시피 순서가 바뀌어도 같은 순환은 같은 키다.
 """
 
 from __future__ import annotations
@@ -67,6 +68,8 @@ class Problem:
     material: 문제가 된 재료 이름 (재료 문제만)
     path: 순환 경로. 첫 물품으로 다시 끝나는 닫힌 경로다 (순환만)
     related: 관련 물품 이름. BLOCKED_BY_SUB_PRODUCT는 계산할 수 없는 직속 하위 물품(레시피 순), 순환은 path의 이름이다.
+    members: 순환이 속한 강연결요소의 물품 전부(물품 id 순. 순환만). 보여 주는 경로는 순회 순서에 따라 달라질 수 있지만
+        구성원은 그래프가 같으면 같으므로, owners와 keys는 경로가 아니라 이 구성원으로 정한다.
     """
 
     code: str
@@ -75,6 +78,7 @@ class Problem:
     path: tuple[ProductRef, ...] = ()
     related: tuple[str, ...] = ()
     hint: str | None = None
+    members: tuple[ProductRef, ...] = ()
 
     @property
     def message(self) -> str:
@@ -93,14 +97,14 @@ class Problem:
 
     @property
     def owners(self) -> tuple[ProductRef, ...]:
-        """문제를 가진 물품. 순환은 구성 물품 전부다."""
+        """문제를 가진 물품. 순환은 경로의 물품과, 같은 강연결요소의 나머지 물품 전부다."""
         if self.code == CIRCULAR_RECIPE:
-            return tuple(dict.fromkeys(self.path))
+            return tuple(dict.fromkeys((*self.path, *self.members)))
         return (self.product,)
 
     @property
     def keys(self) -> tuple[tuple[str, int, str | None], ...]:
-        """쓰기 전후를 비교하는 키 (code, 물품 id, 재료). 순환은 구성 물품마다 (code, id, None)을 하나씩 만든다."""
+        """쓰기 전후를 비교하는 키 (code, 물품 id, 재료). 순환은 owners마다 (code, id, None)을 하나씩 만든다."""
         if self.code == CIRCULAR_RECIPE:
             return tuple((self.code, owner.id, None) for owner in self.owners)
         return ((self.code, self.product.id, self.material),)
@@ -154,11 +158,15 @@ def diagnose(
         problems.extend(dict.fromkeys(problem for problem in own if problem is not None))
     has_own_cause = {problem.product.name for problem in problems}
 
-    # 2. 순환
+    # 2. 순환. 구성원은 강연결요소로 정하고(순회 순서와 무관), 보여 줄 경로는 구성원마다 하나 이상 걸리게 찾는다.
     focus = list(focus)
-    cycles = [_cycle_problem(_rotate_to_focus(path, focus), refs) for path in _find_cycle_paths(order, subs)]
+    components = _cyclic_components(order, subs)
+    cycles = [
+        _cycle_problem(_rotate_to_focus(path, focus), refs, components[path[0]])
+        for path in _find_cycle_paths(order, subs, components)
+    ]
     problems.extend(cycles)
-    cycle_members = {name for problem in cycles for name in problem.related}
+    cycle_members = set(components)
 
     # 3. 막힘: 근본 원인을 가진 물품에서 '하위 물품 → 그것을 쓰는 물품' 방향으로 닿는 물품
     blocked = _reachable(has_own_cause | cycle_members, users)
@@ -256,11 +264,59 @@ def _material_problem(product, item, recipes, prices):
     return Problem(UNKNOWN_SUB_PRODUCT, product, item.name, hint=hint)
 
 
-def _find_cycle_paths(order, subs):
-    """반복형 DFS(색 표시)로 순환 경로를 찾는다. 같은 구성원 집합의 순환은 한 번만 돌려준다.
+def _cyclic_components(order, subs):
+    """순환이 있는 강연결요소를 찾는다 (반복형 Tarjan). 물품 이름 → 그 물품이 속한 요소(물품 id 순 튜플).
 
-    시작점은 물품 id 순, 하위 물품은 레시피 순이다. focus와 관계없이 돌아서
-    쓰기 전후에 같은 순환을 같은 구성원으로 찾는다 (구성원이 곧 키다).
+    구성원이 2개 이상인 요소와, 자기 자신을 하위 물품으로 쓰는 물품만 넣는다. 순환에 속하지 않는 물품은 없다.
+    결과는 그래프에만 달려 있고 순회 시작점이나 레시피 순서와 관계없다. 그래서 쓰기 전후의 순환 키가
+    이번 쓰기와 무관한 간선 변화로 바뀌지 않는다.
+    """
+    rank = {name: position for position, name in enumerate(order)}
+    index, low, on_stack, stack, components = {}, {}, set(), [], {}
+    for root in order:
+        if root in index:
+            continue
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on_stack.add(root)
+        work = [(root, iter(subs[root]))]
+        while work:
+            node, branch = work[-1]
+            child = next(branch, None)
+            if child is not None:
+                if child not in index:
+                    index[child] = low[child] = len(index)
+                    stack.append(child)
+                    on_stack.add(child)
+                    work.append((child, iter(subs[child])))
+                elif child in on_stack:
+                    low[node] = min(low[node], index[child])
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+            if low[node] != index[node]:
+                continue
+            members = []
+            while True:
+                member = stack.pop()
+                on_stack.discard(member)
+                members.append(member)
+                if member == node:
+                    break
+            if len(members) > 1 or node in subs[node]:
+                component = tuple(sorted(members, key=rank.__getitem__))
+                components.update(dict.fromkeys(members, component))
+    return components
+
+
+def _find_cycle_paths(order, subs, components):
+    """보여 줄 순환 경로를 찾는다. 같은 구성원 집합의 순환은 한 번만 돌려준다.
+
+    먼저 반복형 DFS(색 표시)로 찾는다. 시작점은 물품 id 순, 하위 물품은 레시피 순이다. DFS는 이미 다 본 물품을
+    거쳐야 순환에 닿는 물품을 놓치므로, 어느 경로에도 없는 순환 구성원(components)은 물품 id 순으로 그 물품을 지나는
+    가장 짧은 순환을 더한다. 그래서 순환 구성원은 모두 어떤 경로엔가 나온다. 키는 경로가 아니라 구성원으로 정한다.
     """
     white, gray, black = 0, 1, 2
     color = dict.fromkeys(order, white)
@@ -285,7 +341,32 @@ def _find_cycle_paths(order, subs):
                 if members not in seen:
                     seen.add(members)
                     paths.append(path)
+
+    covered = {name for path in paths for name in path}
+    for name in order:
+        if name in components and name not in covered:
+            path = _shortest_cycle_through(name, subs, frozenset(components[name]))
+            covered.update(path)
+            paths.append(path)  # name이 처음 나오므로 구성원 집합이 앞의 경로와 겹치지 않는다
     return paths
+
+
+def _shortest_cycle_through(start, subs, members):
+    """start를 지나는 가장 짧은 순환을 강연결요소(members) 안에서 BFS로 찾는다. start로 다시 끝나는 닫힌 경로다."""
+    parent = {start: None}
+    queue = deque([start])
+    while queue:
+        node = queue.popleft()
+        for sub in subs[node]:
+            if sub == start:
+                path = [node]
+                while parent[path[-1]] is not None:
+                    path.append(parent[path[-1]])
+                return [*reversed(path), start]
+            if sub in members and sub not in parent:
+                parent[sub] = node
+                queue.append(sub)
+    raise AssertionError(f"강연결요소 구성원인데 순환이 없습니다: {start}")
 
 
 def _rotate_to_focus(path, focus):
@@ -299,8 +380,14 @@ def _rotate_to_focus(path, focus):
     return path
 
 
-def _cycle_problem(path, refs):
-    return Problem(CIRCULAR_RECIPE, refs[path[0]], path=tuple(refs[name] for name in path), related=tuple(path))
+def _cycle_problem(path, refs, component):
+    return Problem(
+        CIRCULAR_RECIPE,
+        refs[path[0]],
+        path=tuple(refs[name] for name in path),
+        related=tuple(path),
+        members=tuple(refs[name] for name in component),
+    )
 
 
 def _reachable(starts, users):

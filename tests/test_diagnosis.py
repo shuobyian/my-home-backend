@@ -178,6 +178,75 @@ def test_blocked_uses_reverse_reachability_and_terminates_on_cycles():
     assert diagnosis.causes["E"] == tuple(cycles)
 
 
+def cycle_keys_by_name(diagnosis, lines_by_product):
+    """CIRCULAR_RECIPE 키를 물품 이름 집합으로 바꾼다 (id 순서가 다른 입력끼리 비교하려고)."""
+    names = {index: name for index, name in enumerate(lines_by_product, start=1)}
+    return {names[product_id] for code, product_id, _ in diagnosis.blocking_keys if code == CIRCULAR_RECIPE}
+
+
+def test_cycle_members_are_strongly_connected_regardless_of_traversal_order():
+    # A → B → C → A와 A → D → B. D도 순환 A → D → B → C → A 위에 있다. 순환 밖의 P가 D를 쓴다.
+    cycle = {
+        "A": [("B", False, 1), ("D", False, 1)],
+        "B": [("C", False, 1)],
+        "C": [("A", False, 1)],
+        "D": [("B", False, 1)],
+    }
+    variants = [
+        {"P": [("D", False, 1)], **cycle},  # 순회가 P → D로 순환에 들어간다
+        {"P": [("나무", True, 1)], **cycle},  # P가 순환을 쓰지 않는다
+        {**cycle, "A": [("D", False, 1), ("B", False, 1)]},  # A의 재료 순서만 다르다
+        dict(reversed(list(cycle.items()))),  # 물품 id 순서가 다르다
+    ]
+
+    for lines_by_product in variants:
+        diagnosis = run(lines_by_product)
+
+        assert cycle_keys_by_name(diagnosis, lines_by_product) == {"A", "B", "C", "D"}
+        blocked = {problem.product.name for problem in diagnosis.problems if problem.code == BLOCKED_BY_SUB_PRODUCT}
+        assert blocked <= {"P"}
+        # 순환 구성원은 모두 어떤 순환 경로엔가 나온다 (점검 화면에서 이유가 보인다).
+        cycles = [problem for problem in diagnosis.problems if problem.code == CIRCULAR_RECIPE]
+        assert {name for problem in cycles for name in problem.related} == {"A", "B", "C", "D"}
+
+
+def test_chord_cycle_member_is_reported_as_cycle_and_keeps_keys_when_entry_changes():
+    # 순환 A ↔ B에 현(A → C → B)이 있다. C도 순환 A → C → B → A 위에 있다. 순환 밖의 D가 A를 쓴다.
+    before_lines = {
+        "D": [("나무", True, 1), ("A", False, 1)],
+        "A": [("B", False, 1), ("C", False, 1)],
+        "B": [("A", False, 1)],
+        "C": [("B", False, 1)],
+    }
+    after_lines = {**before_lines, "D": [("나무", True, 1), ("C", False, 1)]}
+
+    before = run(before_lines)
+    after = run(after_lines, focus=["D"])
+
+    assert [problem.related for problem in before.problems if problem.code == CIRCULAR_RECIPE] == [
+        ("A", "B", "A"),
+        ("C", "B", "A", "C"),
+    ]
+    blocked = {
+        problem.product.name: problem.related for problem in before.problems if problem.code == BLOCKED_BY_SUB_PRODUCT
+    }
+    assert blocked == {"D": ("A",)}
+    # 순환 밖의 D가 순환에 들어가는 물품만 바꿨으므로 새 문제가 없다.
+    assert after.blocking_keys == before.blocking_keys
+
+
+def test_new_cycle_through_product_blocked_by_cycle_is_a_new_key():
+    before_lines = {"A": [("B", False, 1)], "B": [("A", False, 1)], "C": [("B", False, 1)]}
+    after_lines = {**before_lines, "A": [("B", False, 1), ("C", False, 1)]}
+
+    before = run(before_lines)
+    after = run(after_lines, focus=["A"])
+
+    assert after.blocking_keys - before.blocking_keys == {(CIRCULAR_RECIPE, 3, None)}
+    selected = select_rejection(after, after.blocking_keys - before.blocking_keys, focus=["A"])
+    assert rejection_message(selected) == "재료 구성에 순환 참조가 있습니다. (A → B → A, A → C → B → A)"
+
+
 def test_overflow_removed_from_sheets_not_propagated():
     catalog = {**BASE, "조각": [("판자", False, 0.0001)]}
 

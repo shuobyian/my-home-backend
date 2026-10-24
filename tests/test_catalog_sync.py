@@ -296,6 +296,54 @@ def test_partial_fix_of_legacy_cycle_is_allowed(client, wood):
     assert list(b.materials.values_list("name", flat=True)) == ["C"]
 
 
+def make_legacy_cycle_entered_from_outside():
+    """이미 있던 순환 A → B → C → A와 A → D → B를 만들고, 순환 밖의 P(id가 가장 작다)가 D를 쓰게 한다.
+
+    순환 구성원을 DFS 경로로 정하면 D가 구성원인지가 순회 시작점(P 유무)과 A의 재료 순서에 따라 달라진다.
+    """
+    p = make_product("P", [("D", False, 1)])
+    a = make_product("A", [("B", False, 1), ("D", False, 1)])
+    make_product("B", [("C", False, 1)])
+    make_product("C", [("A", False, 1)])
+    make_product("D", [("B", False, 1)])
+    return p, a
+
+
+def test_removing_reference_into_legacy_cycle_is_allowed(client, wood):
+    p, a = make_legacy_cycle_entered_from_outside()
+
+    response = client.put("/product", {"id": p.id, "materials": [basic("나무", 1)]}, format="json")
+    assert response.status_code == 200, response.json()
+    assert totals() == {"P": 10}
+
+    # 순환 구성원의 재료 순서만 바꿔도 같은 순환이다.
+    response = client.put("/product", {"id": a.id, "materials": [sub("D", 1), sub("B", 1)]}, format="json")
+    assert response.status_code == 200, response.json()
+
+
+def test_deleting_product_pointing_into_legacy_cycle_is_allowed(client, wood):
+    p, _ = make_legacy_cycle_entered_from_outside()
+
+    response = client.delete("/product", {"ids": [p.id]}, format="json")
+
+    assert response.status_code == 200, response.json()
+    assert not Product.objects.filter(id=p.id).exists()
+
+
+def test_new_cycle_through_product_blocked_by_legacy_cycle_is_rejected(client, wood):
+    # 이미 있던 순환 A ↔ B를 C가 쓴다 (C는 순환 구성원이 아니라 막힌 물품이다).
+    a = make_product("A", [("B", False, 1)])
+    make_product("B", [("A", False, 1)])
+    make_product("C", [("B", False, 1)])
+
+    # A가 C를 쓰게 하면 새 순환 A → C → B → A가 생긴다.
+    response = client.put("/product", {"id": a.id, "materials": [sub("B", 1), sub("C", 1)]}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "재료 구성에 순환 참조가 있습니다. (A → B → A, A → C → B → A)"
+    assert list(a.materials.values_list("name", flat=True)) == ["B"]
+
+
 def test_market_price_overflow_rejected_and_new_market_rolled_back(client, catalog):
     assert client.post("/result").status_code == 201
     before = results_by_name()
