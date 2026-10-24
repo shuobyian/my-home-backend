@@ -229,6 +229,51 @@ def test_market_price_overflow_rejected_and_new_market_rolled_back(client, catal
     assert results_by_name() == before
 
 
+def test_rename_market_propagates_to_basic_materials_and_results(client, catalog):
+    assert client.post("/result").status_code == 201
+    before = results_by_name()
+    # '나무'라는 물품도 있고, 그 물품을 하위 물품(basic=False)으로 쓰는 레시피도 있다.
+    make_product("나무", [("못", True, 1)])
+    crate = make_product("나무상자", [("나무", False, 2)])
+    wood = Market.objects.get(name="나무")
+
+    response = client.put("/market", [{"id": wood.id, "name": "원목"}], format="json")
+
+    assert response.status_code == 200
+    assert response.json() == [{"id": wood.id, "name": "원목", "price": 10}]
+    assert list(catalog["판자"].materials.values_list("name", "basic")) == [("원목", True)]
+    # 시세가 아니라 물품을 가리키는 재료는 그대로다.
+    assert list(crate.materials.values_list("name", "basic")) == [("나무", False)]
+    after = results_by_name()
+    assert after["판자"]["names"] == "원목"
+    assert after["식탁"]["names"] == "못,원목"
+    assert after["의자"]["names"] == "천,원목"
+    assert after["나무상자"]["names"] == "못"
+    assert {name: after[name]["id"] for name in before} == {name: row["id"] for name, row in before.items()}
+
+    # 맞바꾸기는 시세 이름 unique 제약에 걸려 기존 메시지로 거절하고, 재료도 바꾸지 않는다.
+    nail = Market.objects.get(name="못")
+    swap = [{"id": wood.id, "name": "못"}, {"id": nail.id, "name": "원목"}]
+    response = client.put("/market", swap, format="json")
+    assert response.status_code == 400
+    assert response.json()["message"] == "이미 존재하는 시세 이름입니다."
+    assert list(catalog["판자"].materials.values_list("name", flat=True)) == ["원목"]
+    assert list(catalog["식탁"].materials.values_list("name", flat=True)) == ["판자", "못"]
+
+
+def test_rename_market_and_add_old_name_in_same_request(client, catalog):
+    wood = Market.objects.get(name="나무")
+
+    items = [{"id": wood.id, "name": "원목"}, {"name": "나무", "price": 1}]
+    response = client.put("/market", items, format="json")
+
+    # 재료는 요청 전 이름 기준으로 따라가므로 원목(10원)을 쓰고, 새 시세 나무(1원)는 쓰는 물품이 없다.
+    assert response.status_code == 200
+    assert list(catalog["판자"].materials.values_list("name", flat=True)) == ["원목"]
+    assert Result.objects.get(product=catalog["판자"]).total_price == 30
+    assert not Material.objects.filter(name="나무").exists()
+
+
 def test_new_market_creates_results_of_now_computable_products(client, catalog):
     assert client.post("/result").status_code == 201
     # 시세가 아직 없는 재료(은)를 쓰는 물품 (이미 있던 문제)
@@ -239,6 +284,48 @@ def test_new_market_creates_results_of_now_computable_products(client, catalog):
 
     assert response.status_code == 200
     assert Result.objects.get(product=silver).total_price == 100
+
+
+def test_delete_unused_market(client, catalog):
+    assert client.post("/result").status_code == 201
+    before = results_by_name()
+    gold = Market.objects.create(name="금", price=1000)
+
+    response = client.delete("/market", {"ids": [gold.id]}, format="json")
+
+    assert response.status_code == 200
+    assert response.json() == {"deletedIds": [gold.id]}
+    assert list(Market.objects.order_by("id").values_list("name", flat=True)) == ["나무", "못", "천"]
+    assert results_by_name() == before
+
+
+def test_delete_used_market_rejected_with_sorted_pairs(client, catalog):
+    make_product("가방", [("천", True, 1), ("못", True, 1), ("천", True, 2)])
+    gold = Market.objects.create(name="금", price=1000)
+    ids = [Market.objects.get(name=name).id for name in ["천", "못", "나무"]] + [gold.id]
+
+    response = client.delete("/market", {"ids": ids}, format="json")
+
+    assert response.status_code == 400
+    # '물품명: 시세명'을 물품명 → 시세명 순으로, 중복 없이 적는다.
+    assert response.json()["message"] == (
+        "물품의 재료로 쓰이는 시세는 삭제할 수 없습니다. (가방: 못, 가방: 천, 식탁: 못, 의자: 천, 판자: 나무)"
+    )
+    # 쓰지 않는 금도 함께 남는다 (요청 전체를 취소한다).
+    assert Market.objects.count() == 4
+
+
+def test_delete_unknown_ids_ignored(client, catalog):
+    gold = Market.objects.create(name="금", price=1000)
+
+    response = client.delete("/market", {"ids": [999, gold.id, gold.id]}, format="json")
+
+    assert response.status_code == 200
+    assert response.json() == {"deletedIds": [gold.id]}
+    empty = client.delete("/market", {"ids": []}, format="json")
+    assert empty.status_code == 200
+    assert empty.json() == {"deletedIds": []}
+    assert Market.objects.count() == 3
 
 
 def test_post_result_creates_missing_and_refreshes_stale_in_place(client, catalog):

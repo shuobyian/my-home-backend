@@ -56,14 +56,51 @@ def test_market_validation_messages(client, catalog, items, message):
     assert response.json()["message"] == message
 
 
-def test_unknown_market_id_creates_new_row(client, catalog):
-    # 현재 동작 고정. 의도적으로 바꾸면 이 테스트도 함께 수정한다.
+def test_unknown_market_id_is_rejected(client, catalog):
+    # 의도적 변경: 예전에는 모르는 id를 새 행으로 만들었다. 다른 관리자가 지운 시세를 고치면 같은 시세가
+    # 새 id로 되살아나므로, 이제 400으로 거절하고 아무것도 저장하지 않는다.
     response = put_markets(client, [{"id": 999, "name": "금", "price": 1}])
 
+    assert response.status_code == 400
+    assert response.json()["message"] == "존재하지 않는 시세입니다. (id: 999)"
+    assert not Market.objects.filter(name="금").exists()
+
+
+def test_unknown_market_ids_are_listed_in_request_order_before_other_checks(client, catalog):
+    wood = Market.objects.get(name="나무")
+    items = [{"price": 1}, {"id": 999, "price": 1}, {"id": wood.id, "price": 2}, {"id": 998}, {"id": 999}]
+
+    response = put_markets(client, items)
+
+    # 새 시세의 name 누락({"price": 1})보다 모르는 id를 먼저 알린다. 같은 id는 한 번만 적는다.
+    assert response.status_code == 400
+    assert response.json()["message"] == "존재하지 않는 시세입니다. (id: 999, 998)"
+    wood.refresh_from_db()
+    assert wood.price == 10
+
+
+def test_delete_markets_accepts_bare_id_list(client, catalog):
+    gold = Market.objects.create(name="금", price=1000)
+
+    response = client.delete("/market", [gold.id], format="json")
+
     assert response.status_code == 200
-    created_id = response.json()[0]["id"]
-    assert created_id == Market.objects.get(name="금").id
-    assert created_id != 999
+    assert response.json() == {"deletedIds": [gold.id]}
+    assert not Market.objects.filter(pk=gold.id).exists()
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ({}, "ids: 이 필드는 필수 항목입니다."),
+        ({"ids": ["x"]}, "ids.0: 유효한 정수를 입력하세요."),
+    ],
+)
+def test_delete_markets_validation_messages(client, catalog, body, message):
+    response = client.delete("/market", body, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"] == message
 
 
 def test_update_markets_response_keeps_request_order(client, catalog):
