@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from apps.common.params import paginate, query_choice, query_int, query_page, query_str
 from apps.common.permissions import IsAdminOrReadOnly
 from apps.products.models import Category, Tool
-from apps.results import services
+from apps.results import services, sync
 from apps.results.presenters import present_result
 from apps.results.serializers import CalculatorInputSerializer, ResultSerializer
 
@@ -30,8 +30,9 @@ class ResultView(APIView):
         )
 
     def post(self, request):
-        results = services.create_missing_results()
-        return Response(ResultSerializer(results, many=True).data, status=status.HTTP_201_CREATED)
+        # 전체 동기화: 빠진 결과를 만들고 낡은 결과를 제자리에서 고친다. 응답은 이번에 새로 만든 결과 행만이다.
+        report = sync.sync_all_results()
+        return Response(ResultSerializer(report.created, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class CalculatorView(APIView):

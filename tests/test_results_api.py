@@ -21,9 +21,10 @@ def test_create_missing_results(client, catalog):
     # 식탁 = 판자 2(나무 3씩) + 못 4  → 못이 얕은 단계라 먼저 나온다
     assert (table.names, table.counts, table.prices, table.total_price) == ("못,나무", "4,6", "20,60", 80)
 
+    # POST /result는 이제 전체 동기화라 할 일이 없어도 성공한다 (새로 만든 결과가 없으면 빈 목록).
     again = client.post("/result")
-    assert again.status_code == 400
-    assert again.json()["message"] == "추가할 결과가 없습니다."
+    assert again.status_code == 201
+    assert again.json() == []
 
 
 def test_create_results_with_invalid_sub_material(client, catalog):
@@ -31,9 +32,12 @@ def test_create_results_with_invalid_sub_material(client, catalog):
 
     response = client.post("/result")
 
-    assert response.status_code == 400
-    assert "하위 재료에 잘못된 물품명이 있습니다." in response.json()["message"]
-    assert not Result.objects.exists()  # 한 건이라도 실패하면 전부 취소
+    # 의도적 변경: 예전에는 한 건이라도 실패하면 전부 취소(400)했다. 이제 계산할 수 있는 결과는 모두 만들고
+    # 계산할 수 없는 물품만 건너뛴다. 고장 난 물품 하나가 다른 물품의 결과까지 막지 않게 하기 위해서다.
+    assert response.status_code == 201
+    expected = [catalog[name].id for name in ["판자", "식탁", "의자"]]
+    assert [result["product_id"] for result in response.json()] == expected
+    assert not Result.objects.filter(product__name="불량품").exists()
 
 
 def test_list_results(client, catalog):
@@ -106,17 +110,23 @@ def test_update_markets_recalculates_results(client, catalog):
     assert (table.names, table.counts, table.prices, table.total_price) == ("못,나무", "4,6", "20,120", 140)
 
 
-def test_update_markets_rolls_back_when_recalculation_fails(client, catalog):
+def test_update_markets_ignores_preexisting_problems(client, catalog):
     client.post("/result")
-    # 결과가 저장된 뒤 레시피가 잘못 바뀐 물품
+    # 결과가 저장된 뒤 레시피가 잘못 바뀐 물품 (DB 직접 수정)
     catalog["의자"].materials.filter(name="판자").update(name="없는물품")
+    chair_before = Result.objects.values("id", "names", "counts", "prices", "total_price").get(product=catalog["의자"])
     wood = Market.objects.get(name="나무")
 
     response = client.put("/market", [{"id": wood.id, "price": 999}], format="json")
 
-    assert response.status_code == 400
+    # 의도적 변경: 예전에는 이미 고장 난 레시피 하나 때문에 시세 수정 전체가 400으로 막혔다.
+    # 이제 이번 쓰기가 새로 만든 문제만 거절하고, 고장 난 물품의 결과는 마지막 값으로 둔다.
+    assert response.status_code == 200
     wood.refresh_from_db()
-    assert wood.price == 10
+    assert wood.price == 999
+    assert Result.objects.get(product=catalog["판자"]).total_price == 2997
+    chair_after = Result.objects.values("id", "names", "counts", "prices", "total_price").get(product=catalog["의자"])
+    assert chair_after == chair_before
 
 
 def test_market_list_and_create(client, catalog):
@@ -197,14 +207,20 @@ def test_calculator_preview_has_no_storage_limit(client, catalog):
     assert results["식탁"]["totalPrice"] == 6 * 10**12 + 20
 
 
-def test_result_total_over_integer_column_is_rejected(client, catalog):
+def test_result_total_over_integer_column_is_not_saved(client, catalog):
     Market.objects.filter(name="나무").update(price=2**31 - 1)
 
     response = client.post("/result")
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "합계 금액이 너무 커서 저장할 수 없습니다. (판자)"
+    # 의도적 변경: POST /result는 저장할 수 없는 물품을 건너뛰고 201이다 (나머지 물품의 결과는 만든다).
+    # 쓰기가 합계 초과를 새로 만들면 400인 경로는 test_catalog_sync의 시세 초과 테스트가 맡는다.
+    assert response.status_code == 201
+    assert response.json() == []
     assert not Result.objects.exists()
+    # 저장하지 못한 이유는 엄격 모드(관리 명령)가 모두 알린다.
+    with pytest.raises(CommandError) as error:
+        call_command("recalculate_results", "--create-missing", stdout=StringIO())
+    assert str(error.value).endswith("합계 금액이 너무 커서 저장할 수 없습니다. (판자, 식탁, 의자)")
 
 
 def test_list_and_calculator_order_same_level_by_name(client, catalog):
@@ -234,10 +250,13 @@ def test_calculator_missing_price_message_names_first_failing_product(client, ca
 def test_create_results_invalid_sub_material_message(client, catalog):
     make_product("불량품", [("없는물품", False, 1)])
 
-    response = client.post("/result")
+    # 의도적 변경: POST /result는 불량품을 건너뛰고 201이라 이 문구를 응답으로 주지 않는다.
+    # 같은 문구를 엄격 모드 동기화(관리 명령)가 그대로 알리는지 본다.
+    assert client.post("/result").status_code == 201
+    with pytest.raises(CommandError) as error:
+        call_command("recalculate_results", "--create-missing", stdout=StringIO())
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "하위 재료에 잘못된 물품명이 있습니다. (불량품: 없는물품)"
+    assert str(error.value).endswith(" 하위 재료에 잘못된 물품명이 있습니다. (불량품: 없는물품)")
 
 
 def test_result_matches_compares_stored_columns():

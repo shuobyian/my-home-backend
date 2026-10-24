@@ -77,16 +77,19 @@ def test_update_markets_response_keeps_request_order(client, catalog):
     assert (wood.name, wood.price) == ("나무", 3)
 
 
-def test_update_markets_does_not_create_missing_results(client, catalog):
+def test_update_markets_creates_missing_computable_results(client, catalog):
     client.post("/result")
     # '은'은 시세가 없는 재료다.
     extra = make_product("은세공", [("은", True, 1)])
+    stand = make_product("받침", [("나무", True, 1)])
     wood = Market.objects.get(name="나무")
 
     response = put_markets(client, [{"id": wood.id, "price": 20}])
 
-    # 200이어야 '실패해서 안 생겼다'가 아니라 '건너뛰어서 안 생겼다'가 된다.
+    # 의도적 변경: 시세를 저장하면 결과가 없던 물품 중 계산할 수 있는 것의 결과도 만든다 (결과 리스트에서 빠지지 않게).
+    # 200이어야 은세공이 '실패해서 안 생겼다'가 아니라 '건너뛰어서 안 생겼다'가 된다.
     assert response.status_code == 200
+    assert Result.objects.get(product=stand).total_price == 20
     assert not Result.objects.filter(product=extra).exists()
 
 
@@ -107,27 +110,33 @@ def test_update_markets_touches_updated_at_keeps_created_at(client, catalog):
         assert created_at == before[result_id]
 
 
-def test_update_markets_rollback_discards_new_market(client, catalog):
+def test_update_markets_with_preexisting_problem_keeps_new_market(client, catalog):
     client.post("/result")
-    # 천을 쓰는 결과는 의자 하나뿐이라 순회 순서와 상관없이 메시지가 정해진다.
+    # 의자가 쓰는 천 시세를 DB에서 지웠다 (이미 있던 문제).
     Market.objects.filter(name="천").delete()
 
     response = put_markets(client, [{"name": "금", "price": 1}])
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "시세 정보가 없는 재료가 있습니다. (의자: 천)"
-    assert not Market.objects.filter(name="금").exists()
+    # 의도적 변경: 예전에는 이미 있던 문제 때문에 400이고 금도 저장되지 않았다.
+    # 이제 이번 쓰기가 새로 만든 문제만 거절한다. 새로 생긴 문제로 롤백되는 경로는 test_catalog_sync에서 본다.
+    assert response.status_code == 200
+    assert Market.objects.filter(name="금").exists()
 
 
 def test_empty_market_update_still_recalculates(client, catalog):
     client.post("/result")
     Market.objects.filter(name="천").delete()
+    Market.objects.filter(name="나무").update(price=20)
+    chair = Result.objects.values("names", "counts", "prices", "total_price").get(product=catalog["의자"])
 
-    # 현재 동작 고정. 빈 목록도 재계산을 실행한다.
+    # 현재 동작 고정. 빈 목록도 결과 동기화를 실행한다.
+    # 의도적 변경: 이미 있던 문제(천 시세 없음)로는 거절하지 않으므로 200이다 (예전에는 400).
     response = put_markets(client, [])
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "시세 정보가 없는 재료가 있습니다. (의자: 천)"
+    assert response.status_code == 200
+    assert response.json() == []
+    assert Result.objects.get(product=catalog["판자"]).total_price == 60
+    assert Result.objects.values("names", "counts", "prices", "total_price").get(product=catalog["의자"]) == chair
 
 
 def test_lock_all_locks_every_market_in_id_order():

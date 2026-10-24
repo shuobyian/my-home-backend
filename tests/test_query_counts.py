@@ -5,6 +5,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.markets.models import Market
+from apps.products.models import Product
 from apps.products.recipes import load_catalog, load_recipes
 from tests.factories import make_product
 
@@ -68,15 +69,20 @@ def test_walnut_query_count(client, experiences, ample, django_assert_num_querie
 def test_write_endpoints_query_count_does_not_grow(client):
     # 서로 다른 parametrize 인스턴스끼리는 비교할 수 없으므로 한 함수 안에서 두 번 잰다.
     # savepoint 구성이 바뀌어도 깨지지 않도록 정확한 숫자 대신 두 회차가 같은지만 본다.
-    def measure_writes(wood_id, names):
+    # 결과는 값이 바뀐 행만 갱신하므로, 회차마다 시세와 판자 레시피를 다르게 바꿔야 두 회차 모두 결과 UPDATE가 나간다.
+    def measure_writes(wood_id, plank_id, value, names, new_name):
+        plank = {"id": plank_id, "materials": [{"name": "나무", "basic": True, "count": value}]}
         counts = []
         for send, status in [
             (lambda: client.post("/result"), 201),
-            (lambda: client.put("/market", [{"id": wood_id, "price": 2}], format="json"), 200),
+            (lambda: client.put("/market", [{"id": wood_id, "price": value}], format="json"), 200),
             (
                 lambda: client.post("/product/all", {"products": [upload_row(name) for name in names]}, format="json"),
                 201,
             ),
+            (lambda: client.post("/product", upload_row(new_name), format="json"), 201),
+            # 판자를 바꾸면 판자를 재료로 쓰는 물품 전부(n개)의 결과가 바뀐다.
+            (lambda: client.put("/product", plank, format="json"), 200),
         ]:
             response, count = measure(send)
             assert response.status_code == status
@@ -86,10 +92,11 @@ def test_write_endpoints_query_count_does_not_grow(client):
     setup_base()
     make_products(0, 3)
     wood_id = Market.objects.get(name="나무").id
-    first = measure_writes(wood_id, [f"업로드{i:03d}" for i in range(3)])
+    plank_id = Product.objects.get(name="판자").id
+    first = measure_writes(wood_id, plank_id, 2, [f"업로드{i:03d}" for i in range(3)], "단건1")
 
     make_products(3, 30)
-    second = measure_writes(wood_id, [f"업로드{i:03d}" for i in range(3, 33)])
+    second = measure_writes(wood_id, plank_id, 3, [f"업로드{i:03d}" for i in range(3, 33)], "단건2")
 
     assert first == second
 

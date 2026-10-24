@@ -6,7 +6,7 @@ from apps.results.models import Result
 
 
 class ResultSerializer(serializers.ModelSerializer):
-    """POST /result 응답 (저장된 결과 행)."""
+    """POST /result 응답 (이번 동기화에서 새로 만든 결과 행)."""
 
     createdAt = serializers.SerializerMethodField()
     updatedAt = serializers.SerializerMethodField()

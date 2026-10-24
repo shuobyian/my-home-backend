@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import AuthToken, User
-from apps.results.services import create_missing_results
+from apps.results.sync import sync_all_results
 
 pytestmark = pytest.mark.django_db
 
@@ -346,7 +346,7 @@ def test_admin_can_write_with_login_token(catalog):
 
 
 def test_public_api_does_not_need_login(catalog, experiences):
-    create_missing_results()
+    sync_all_results()
     client = APIClient()
 
     assert client.get("/product").status_code == 200
