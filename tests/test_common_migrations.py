@@ -91,6 +91,8 @@ def test_adds_missing_constraints_to_production_market():
         ("id", "integer", None, "NO", "YES"),
         ("name", "character varying", 255, "NO", "NO"),
         ("price", "integer", None, "NO", "NO"),
+        # markets.0002가 제약을 채운 뒤 분류 칸을 더한다.
+        ("group", "character varying", 255, "NO", "NO"),
     ]
     # update_markets처럼 bulk_create로 추가해도 지금 있는 최대 id 다음 번호를 받는다.
     (created,) = Market.objects.bulk_create([Market(name="돌", price=3)])

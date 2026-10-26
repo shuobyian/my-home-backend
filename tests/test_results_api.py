@@ -107,7 +107,7 @@ def test_update_markets_recalculates_results(client, catalog):
     response = client.put("/market", [{"id": wood.id, "name": "나무", "price": 20}], format="json")
 
     assert response.status_code == 200
-    assert response.json() == [{"id": wood.id, "name": "나무", "price": 20}]
+    assert response.json() == [{"id": wood.id, "name": "나무", "price": 20, "group": "ETC"}]
     table = Result.objects.get(product=catalog["식탁"])
     assert (table.names, table.counts, table.prices, table.total_price) == ("못,나무", "4,6", "20,120", 140)
 
