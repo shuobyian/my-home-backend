@@ -47,6 +47,7 @@ def test_rename_market_to_existing_name_is_rejected(client, catalog):
         ([{"price": 1.5}], "0.price: 유효한 정수를 입력하세요."),
         ([{}, {"price": "x"}], "1.price: 유효한 정수를 입력하세요."),
         ([{"name": "a,b", "price": 1}], "0.name: 이름에 콤마(,)를 넣을 수 없습니다."),
+        ([{"name": "금", "price": 1, "group": "X"}], '0.group: "X"은 유효하지 않은 선택입니다.'),
     ],
 )
 def test_market_validation_messages(client, catalog, items, message):
@@ -54,6 +55,26 @@ def test_market_validation_messages(client, catalog, items, message):
 
     assert response.status_code == 400
     assert response.json()["message"] == message
+
+
+def test_new_market_group_defaults_to_etc(client, catalog):
+    response = put_markets(client, [{"name": "금", "price": 1}, {"name": "밀", "price": 2, "group": "CROP"}])
+
+    assert response.status_code == 200
+    assert [market["group"] for market in response.json()] == ["ETC", "CROP"]
+    saved = dict(Market.objects.filter(name__in=["금", "밀"]).values_list("name", "group"))
+    assert saved == {"금": "ETC", "밀": "CROP"}
+
+
+def test_update_market_group_only_keeps_name_and_price(client, catalog):
+    wood = Market.objects.get(name="나무")
+
+    response = put_markets(client, [{"id": wood.id, "group": "TIMBER"}])
+
+    assert response.status_code == 200
+    assert response.json() == [{"id": wood.id, "name": "나무", "price": 10, "group": "TIMBER"}]
+    wood.refresh_from_db()
+    assert (wood.name, wood.price, wood.group) == ("나무", 10, "TIMBER")
 
 
 def test_unknown_market_id_is_rejected(client, catalog):

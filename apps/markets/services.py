@@ -5,6 +5,9 @@ from apps.markets.models import Market
 from apps.products.models import Material
 from apps.results.sync import begin_catalog_change, finish_catalog_change
 
+# PUT /market으로 바꿀 수 있는 필드. 분류(group)는 화면에서 묶어 보여 주는 데만 쓰여 결과에 영향이 없다.
+EDITABLE_FIELDS = ("name", "price", "group")
+
 
 def list_markets():
     return Market.objects.order_by("id")
@@ -33,18 +36,19 @@ def update_markets(items):
         if market is None:
             if "name" not in item or "price" not in item:
                 raise BadRequest("새 시세에는 name과 price가 필요합니다.")
-            market = Market(name=item["name"], price=item["price"])
+            # 분류를 보내지 않은 새 시세는 모델 기본값(기타)이다.
+            market = Market()
             to_create.append(market)
         else:
-            for field in ("name", "price"):
-                if field in item:
-                    setattr(market, field, item[field])
             to_update[market.pk] = market
+        for field in EDITABLE_FIELDS:
+            if field in item:
+                setattr(market, field, item[field])
         saved.append(market)
 
     try:
         with transaction.atomic():
-            Market.objects.bulk_update(to_update.values(), ["name", "price"])
+            Market.objects.bulk_update(to_update.values(), EDITABLE_FIELDS)
             Market.objects.bulk_create(to_create)
     except IntegrityError:
         raise BadRequest("이미 존재하는 시세 이름입니다.") from None

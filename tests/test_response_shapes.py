@@ -105,9 +105,9 @@ def test_delete_product_key_order(client, catalog):
 def test_market_key_order(client, catalog):
     wood_id = Market.objects.get(name="나무").id
 
-    assert list(client.get("/market").json()[0]) == ["id", "name", "price"]
+    assert list(client.get("/market").json()[0]) == ["id", "name", "price", "group"]
     body = client.put("/market", [{"id": wood_id, "price": 11}], format="json").json()
-    assert list(body[0]) == ["id", "name", "price"]
+    assert list(body[0]) == ["id", "name", "price", "group"]
 
 
 def test_delete_market_key_order(client, catalog):

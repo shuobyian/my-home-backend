@@ -370,7 +370,7 @@ def test_rename_market_propagates_to_basic_materials_and_results(client, catalog
     response = client.put("/market", [{"id": wood.id, "name": "원목"}], format="json")
 
     assert response.status_code == 200
-    assert response.json() == [{"id": wood.id, "name": "원목", "price": 10}]
+    assert response.json() == [{"id": wood.id, "name": "원목", "price": 10, "group": "ETC"}]
     assert list(catalog["판자"].materials.values_list("name", "basic")) == [("원목", True)]
     # 시세가 아니라 물품을 가리키는 재료는 그대로다.
     assert list(crate.materials.values_list("name", "basic")) == [("나무", False)]

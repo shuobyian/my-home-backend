@@ -191,6 +191,9 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 - 회원은 기초 재료(시세가 있는 최하위 재료)를 몇 개 가졌는지 저장할 수 있다(`/inventory`). 본인 것만 읽고 쓴다.
   시세를 id로 가리켜서 시세 이름을 바꾸면 따라가고, 시세나 회원이 지워지면 함께 지워진다.
   프론트는 결과·장바구니 합산·자유 모드 결과에서 필요 개수에서 보유 개수를 뺀 부족 개수를 함께 보여 준다.
+- 시세마다 얻는 곳 분류(`group`: 작물·광물·별빛 재료 등, `apps/markets/models.py`의 `MarketGroup`)가 있다.
+  프론트가 재료를 묶어 보여 주는 데만 쓰고 계산에는 쓰지 않는다. 분류를 보내지 않은 새 시세는 기타(`ETC`)이고,
+  관리자가 시세 관리 화면에서 고친다. 분류를 추가하거나 이름을 바꾸려면 백엔드와 프론트의 목록을 함께 고친다.
 - 관리자는 `python manage.py createsuperuser`로 만든다. 이미 가입한 회원을 관리자로 바꾸려면
   `python manage.py shell -c "from apps.accounts.models import User; User.objects.filter(username='<아이디>').update(is_staff=True)"`.
 - 로그인·가입 응답의 `token`을 이후 요청 헤더에 `Authorization: Bearer <token>`으로 넣는다.
@@ -221,8 +224,8 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 | POST | `/product/all` | `{products: [...]}` 일괄 추가 (이미 있는 물품은 건너뜀), 새 물품 전부의 결과도 생성 (관리자) |
 | PUT | `/product` | 물품 수정 (보낸 필드만 수정, 재료는 통째로 교체), 이 물품과 상위 물품의 결과도 갱신 (관리자) |
 | DELETE | `/product` | `{ids: [...]}` 또는 `[id, ...]` 삭제 (재료·결과도 함께 삭제) (관리자) |
-| GET | `/market` | 시세 목록 |
-| PUT | `/market` | `[{id?, name?, price?}]` 시세 수정/추가 후 전체 결과 동기화. 이름을 바꾸면 그 이름을 쓰는 기본 재료도 바뀌고, 새 시세로 계산할 수 있게 된 물품의 결과도 생성. 모르는 id는 400 (관리자) |
+| GET | `/market` | 시세 목록 `[{id, name, price, group}]` |
+| PUT | `/market` | `[{id?, name?, price?, group?}]` 시세 수정/추가(새 시세의 group은 없으면 `ETC`) 후 전체 결과 동기화. 이름을 바꾸면 그 이름을 쓰는 기본 재료도 바뀌고, 새 시세로 계산할 수 있게 된 물품의 결과도 생성. 모르는 id는 400 (관리자) |
 | DELETE | `/market` | `{ids: [...]}` 또는 `[id, ...]` 삭제, `{deletedIds}` (재료로 쓰이는 시세는 400, 없는 id는 무시) (관리자) |
 | POST | `/result` | 전체 동기화 (빠진 결과 생성 + 낡은 결과 제자리 갱신, 계산할 수 없는 물품은 건너뜀). 항상 201, 새로 만든 결과 행만 응답 (관리자) |
 | GET | `/result?page&size&name&count&tool&category` | 결과 목록 (`count`개 제작 기준) |
@@ -249,7 +252,7 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 
 로그인(`/product/login` 대신 `/auth/login`)과 쓰기 API의 관리자 토큰을 빼면, 프론트엔드(my-home-frontend)가 쓰는
 정상 요청의 응답 형식은 그대로다. 응답에 키가 추가된 곳만 있다
-(결과 항목의 최상위 `category`, 물품 추가·수정 응답의 `id`/`materials`).
+(결과 항목의 최상위 `category`, 물품 추가·수정 응답의 `id`/`materials`, 시세 응답의 `group`).
 새 엔드포인트(`DELETE /market`, `GET /catalog/check`)만 새 응답 모양을 쓴다. 에러 응답 형식은 바뀌지 않는다.
 
 **시세·물품·결과 연결** (`apps/results/sync.py`)
