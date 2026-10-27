@@ -82,6 +82,14 @@ class WithdrawSerializer(serializers.Serializer):
         return check_current_password(self.context["user"], value)
 
 
+class ProfileSerializer(serializers.ModelSerializer):
+    """PATCH /auth/me. 닉네임만 바꾼다(아이디는 바꿀 수 없다). 앞뒤 공백은 빼고 저장한다."""
+
+    class Meta:
+        model = User
+        fields = ["nickname"]
+
+
 class UserSerializer(serializers.ModelSerializer):
     isAdmin = serializers.BooleanField(source="is_staff", read_only=True)
 

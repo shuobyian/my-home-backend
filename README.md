@@ -215,6 +215,7 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 | POST | `/auth/login` | `{username, password}` 로그인 `{token, expiresAt, user: {id, username, nickname, isAdmin}}` |
 | POST | `/auth/logout` | 이 기기의 토큰 삭제 (204, 토큰이 없어도 204) |
 | GET | `/auth/me` | 내 정보 `{id, username, nickname, isAdmin}` (로그인) |
+| PATCH | `/auth/me` | `{nickname}` 닉네임 변경, 바뀐 내 정보 (아이디는 바꿀 수 없음, 로그인) |
 | PUT | `/auth/password` | `{currentPassword, newPassword}` 비밀번호 변경, 새 `{token, expiresAt, user}` (로그인) |
 | DELETE | `/auth/me` | `{password}` 회원 탈퇴 (204, 로그인) |
 | GET | `/inventory` | 내 보유 재료 `[{marketId, name, count}]` (시세 id 순, 개수가 0인 재료는 없음) (로그인) |
