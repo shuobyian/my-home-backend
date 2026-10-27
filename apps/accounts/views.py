@@ -7,6 +7,7 @@ from apps.accounts import services
 from apps.accounts.serializers import (
     LoginSerializer,
     PasswordChangeSerializer,
+    ProfileSerializer,
     SessionSerializer,
     SignupSerializer,
     UserSerializer,
@@ -55,6 +56,12 @@ class MeView(APIView):
         return super().get_throttles() if self.request.method == "DELETE" else []
 
     def get(self, request):
+        return Response(UserSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = ProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(UserSerializer(request.user).data)
 
     def delete(self, request):

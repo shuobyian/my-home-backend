@@ -256,6 +256,43 @@ def test_reading_me_is_not_throttled():
     assert all(client.get("/auth/me").status_code == 200 for _ in range(15))
 
 
+# 프로필(닉네임) 변경
+
+
+def test_update_nickname_trims_and_returns_member():
+    member = make_member()
+
+    response = bearer(login_token()).patch("/auth/me", {"nickname": "  새 닉네임 "}, format="json")
+
+    assert response.status_code == 200
+    assert response.json() == {"id": member.id, "username": "회원1", "nickname": "새 닉네임", "isAdmin": False}
+    assert User.objects.get().nickname == "새 닉네임"
+
+
+@pytest.mark.parametrize("nickname", ["", "   ", "가" * 21])
+def test_update_nickname_rejects_invalid_nickname(nickname):
+    make_member()
+
+    response = bearer(login_token()).patch("/auth/me", {"nickname": nickname}, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["message"].startswith("nickname:")
+    assert User.objects.get().nickname == NICKNAME
+
+
+def test_update_profile_cannot_change_username():
+    make_member()
+
+    response = bearer(login_token()).patch("/auth/me", {"username": "회원2", "nickname": "새 닉네임"}, format="json")
+
+    assert response.status_code == 200
+    assert User.objects.get().username == "회원1"
+
+
+def test_update_profile_requires_login():
+    assert APIClient().patch("/auth/me", {"nickname": "새 닉네임"}, format="json").status_code == 401
+
+
 # 비밀번호 변경·탈퇴
 
 
