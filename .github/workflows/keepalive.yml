@@ -1,0 +1,12 @@
+# Render 무료 인스턴스는 15분 동안 요청이 없으면 잠든다. 10분마다 health(/)를 불러 깨워 둔다.
+# GitHub schedule은 실행이 밀릴 수 있어 15분을 넘기면 한 번씩 잠들 수 있다.
+name: keepalive
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS --retry 3 --max-time 90 https://my-home-backend-jqsu.onrender.com/ > /dev/null
