@@ -11,6 +11,8 @@ urlpatterns = [
     path("", include("apps.results.urls")),
     path("", include("apps.experiences.urls")),
     path("", include("apps.inventories.urls")),
+    path("", include("apps.logs.urls")),
+    path("", include("apps.reports.urls")),
 ]
 
 handler400 = "apps.common.views.bad_request"

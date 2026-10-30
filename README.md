@@ -25,6 +25,9 @@ apps/results/           계산 결과(result) — /result, 데이터 점검 — 
   presenters.py         결과·점검 응답 형식 (제작 개수 배율 포함)
 apps/experiences/       레벨 경험치(experience), 호두나무 계산 — /experience
 apps/inventories/       회원별 보유 재료(기초 재료 개수) — /inventory
+apps/reports/           제보 게시판(report, report_change) — /report
+  changes.py            바꿀 값의 대상(경험치·시세·물품·재료)마다 현재 값 읽기와 필드 검증
+apps/logs/              활동 로그(activity_log: 로그인·회원 정보·제보 이력) — /log
 tests/                  pytest
 ```
 
@@ -206,6 +209,36 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 - 로그인·가입·비밀번호 확인(변경·탈퇴)은 횟수를 제한한다 (로그인·비밀번호 확인 분당 10회, 가입 시간당 10회, 넘으면 429).
   제한 기록은 프로세스 메모리에 있어서 gunicorn worker마다 따로 세고, 재시작하면 지워진다.
 
+### 제보 게시판 (`/report`)
+
+- 버그(`BUG`)나 잘못된 수치·정보(`DATA`)를 제보한다. 목록·상세는 누구나 보고, 쓰기는 로그인한 회원만 한다.
+- 제보에는 바꿀 값(`changes`)을 20줄까지 담는다. 한 줄은 `{target, targetId, field, value}`로
+  "어느 데이터(대상·id)의 어느 값(필드)이 무엇(value)이어야 하는지"를 적는다. 예: 90레벨 경험치는 10,000,000
+  `{"target": "EXPERIENCE", "targetId": <GET /experience의 id>, "field": "amount", "value": 10000000}`.
+
+  | target | id | field |
+  | --- | --- | --- |
+  | `EXPERIENCE` 레벨 경험치 | `GET /experience`의 `id` | `amount` |
+  | `MARKET` 시세 | `GET /market`의 `id` | `name`, `price`, `group` |
+  | `PRODUCT` 물품 | `GET /product`의 `id` | `name`, `level`, `craftingPrice`, `tool`, `category` |
+  | `MATERIAL` 물품 재료 | `GET /product`의 `materials[].id` | `name`, `count` |
+
+  값은 관리 API와 같은 규칙으로 검사한다(경험치·가격은 0 이상 정수 등). 없는 대상, 현재 값과 같은 값,
+  같은 값을 두 번 넣은 제보는 400이다. 쓸 때의 대상 이름(`label`)과 값(`before`)을 함께 저장해서,
+  나중에 데이터가 바뀌거나 지워져도 제보가 말한 내용은 그대로 남는다. 대상을 더하려면 `changes.py`와
+  프론트의 목록(`src/domain/report.ts`)을 함께 고친다.
+- 상태는 접수(`OPEN`) → 반영(`RESOLVED`)·반려(`REJECTED`)다. 쓴 사람은 접수 상태일 때만 고치거나 지운다.
+  관리자는 상태와 답변(`answer`)을 정하고(`PATCH`), 언제든 지운다. 반영으로 바꿔도 데이터는 자동으로 바뀌지 않는다
+  (관리자가 관리 화면에서 고친다). 쓴 회원이 탈퇴해도 제보는 남는다(`author: null`).
+
+### 활동 로그 (`/log`, 관리자)
+
+- 회원가입·로그인·로그인 실패·로그아웃·닉네임 변경·비밀번호 변경·탈퇴와 제보 작성·수정·삭제·처리를 남긴다
+  (`apps/logs/models.py`의 `Action`). 비밀번호와 토큰은 남기지 않는다.
+- 로그마다 그때의 아이디(로그인 실패는 입력한 아이디), IP, User-Agent, 제보 id와 상세(`detail`)를 적는다.
+  IP는 쓰로틀과 같은 기준(`X-Forwarded-For` 전체 값, 없으면 접속 주소)이라 위조할 수 있어 참고용이다.
+- 회원이나 제보가 지워져도 로그는 남는다. 오래된 로그를 지우는 기능은 없다.
+
 ## API
 
 | 메서드 | 경로 | 설명 |
@@ -234,6 +267,13 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 | GET | `/catalog/check` | 데이터 점검 `{summary, products, markets, problems}` (저장 안 함) (관리자) |
 | GET | `/experience` | 레벨별 경험치 |
 | GET | `/experience/walnut?presentLevel&presentExperience&objectiveLevel&productionPercent` | 호두나무 수확 횟수와 식물앰플 비용 |
+| GET | `/report?page&size&status&kind` | 제보 목록(최근 것부터) `{totalElements, content: [{id, kind, title, content, status, answer, author: {id, nickname} \| null, changes: [{target, targetId, label, field, before, after}], createdAt, updatedAt}]}` |
+| POST | `/report` | `{kind, title, content?, changes?: [{target, targetId, field, value}]}` 제보 작성 (201, 로그인) |
+| GET | `/report/<id>` | 제보 상세 (없으면 404) |
+| PUT | `/report/<id>` | 작성과 같은 본문으로 고치기, 바꿀 값은 통째로 교체 (쓴 사람·접수 상태만, 아니면 403) |
+| PATCH | `/report/<id>` | `{status?, answer?}` 제보 처리 (관리자) |
+| DELETE | `/report/<id>` | 삭제 (204, 쓴 사람은 접수 상태일 때만, 관리자는 언제든) |
+| GET | `/log?page&size&action&username&reportId` | 활동 로그(최근 것부터) `{totalElements, content: [{id, action, userId, username, reportId, detail, ip, userAgent, createdAt}]}` (`username`은 부분 일치) (관리자) |
 
 요청 본문은 JSON만 받는다. 에러 응답은 NestJS와 같은 형식이다: `{"statusCode": 400, "message": "...", "error": "Bad Request"}`
 
