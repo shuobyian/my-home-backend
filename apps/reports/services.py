@@ -6,8 +6,11 @@ from apps.logs.services import record
 from apps.reports.models import Report, ReportChange, ReportStatus
 
 
-def list_reports(*, status=None, kind=None):
+def list_reports(*, user=None, status=None, kind=None):
+    """관리자는 모든 제보를, 회원은 자기가 쓴 제보만 본다. user를 주지 않으면 거르지 않는다."""
     reports = Report.objects.select_related("author").prefetch_related("changes").order_by("-id")
+    if user is not None and not user.is_staff:
+        reports = reports.filter(author=user)
     if status:
         reports = reports.filter(status=status)
     if kind:
@@ -15,8 +18,9 @@ def list_reports(*, status=None, kind=None):
     return reports
 
 
-def get_report(pk):
-    report = list_reports().filter(pk=pk).first()
+def get_report(pk, *, user=None):
+    # 남의 제보는 있는지조차 알리지 않도록 없는 제보와 똑같이 404로 답한다
+    report = list_reports(user=user).filter(pk=pk).first()
     if report is None:
         raise NotFound("존재하지 않는 제보입니다.")
     return report

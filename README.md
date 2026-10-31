@@ -211,7 +211,8 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 
 ### 제보 게시판 (`/report`)
 
-- 버그(`BUG`)나 잘못된 수치·정보(`DATA`)를 제보한다. 목록·상세는 누구나 보고, 쓰기는 로그인한 회원만 한다.
+- 버그(`BUG`)나 잘못된 수치·정보(`DATA`)를 제보한다. 로그인한 회원만 쓰고 본다.
+  관리자는 모든 제보를, 회원은 자기가 쓴 제보만 목록·상세로 본다(남의 제보 상세는 404).
 - 제보에는 바꿀 값(`changes`)을 20줄까지 담는다. 한 줄은 `{target, targetId, field, value}`로
   "어느 데이터(대상·id)의 어느 값(필드)이 무엇(value)이어야 하는지"를 적는다. 예: 90레벨 경험치는 10,000,000
   `{"target": "EXPERIENCE", "targetId": <GET /experience의 id>, "field": "amount", "value": 10000000}`.
@@ -267,9 +268,9 @@ Django `migrate`로 새로 만든 DB에는 Nest(`synchronize: true`)를 붙이�
 | GET | `/catalog/check` | 데이터 점검 `{summary, products, markets, problems}` (저장 안 함) (관리자) |
 | GET | `/experience` | 레벨별 경험치 |
 | GET | `/experience/walnut?presentLevel&presentExperience&objectiveLevel&productionPercent` | 호두나무 수확 횟수와 식물앰플 비용 |
-| GET | `/report?page&size&status&kind` | 제보 목록(최근 것부터) `{totalElements, content: [{id, kind, title, content, status, answer, author: {id, nickname} \| null, changes: [{target, targetId, label, field, before, after}], createdAt, updatedAt}]}` |
+| GET | `/report?page&size&status&kind` | 제보 목록(최근 것부터, 로그인, 관리자는 전체·회원은 자기 제보만) `{totalElements, content: [{id, kind, title, content, status, answer, author: {id, nickname} \| null, changes: [{target, targetId, label, field, before, after}], createdAt, updatedAt}]}` |
 | POST | `/report` | `{kind, title, content?, changes?: [{target, targetId, field, value}]}` 제보 작성 (201, 로그인) |
-| GET | `/report/<id>` | 제보 상세 (없으면 404) |
+| GET | `/report/<id>` | 제보 상세 (로그인, 없거나 남의 제보면 404, 관리자는 모두) |
 | PUT | `/report/<id>` | 작성과 같은 본문으로 고치기, 바꿀 값은 통째로 교체 (쓴 사람·접수 상태만, 아니면 403) |
 | PATCH | `/report/<id>` | `{status?, answer?}` 제보 처리 (관리자) |
 | DELETE | `/report/<id>` | 삭제 (204, 쓴 사람은 접수 상태일 때만, 관리자는 언제든) |

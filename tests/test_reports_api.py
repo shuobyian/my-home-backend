@@ -116,20 +116,47 @@ def test_same_value_twice_is_rejected(experiences):
     assert response.json()["message"] == "같은 값을 두 번 넣었습니다. (90레벨 amount)"
 
 
-def test_anyone_reads_reports_with_filters(experiences):
+def test_reading_requires_login(experiences):
+    created = write_report(member_client(), level_90())
+    anon = APIClient()
+
+    assert anon.get("/report").status_code == 401
+    assert anon.get(f"/report/{created['id']}").status_code == 401
+
+
+def test_member_reads_own_reports_with_filters(experiences):
     member = member_client()
     data = write_report(member, level_90())
     bug = write_report(member, kind="BUG", title="버그", content="화면이 깨져요")
-    anon = APIClient()
 
-    listed = anon.get("/report", {"page": 0, "size": 10}).json()
+    listed = member.get("/report", {"page": 0, "size": 10}).json()
     assert listed["totalElements"] == 2
     assert [report["id"] for report in listed["content"]] == [bug["id"], data["id"]]
-    assert [r["id"] for r in anon.get("/report", {"kind": "DATA"}).json()["content"]] == [data["id"]]
-    assert anon.get("/report", {"status": "RESOLVED"}).json()["totalElements"] == 0
-    assert anon.get(f"/report/{data['id']}").json() == data
-    assert anon.get("/report/999999").status_code == 404
-    assert anon.get("/report", {"status": "DONE"}).status_code == 400
+    assert [r["id"] for r in member.get("/report", {"kind": "DATA"}).json()["content"]] == [data["id"]]
+    assert member.get("/report", {"status": "RESOLVED"}).json()["totalElements"] == 0
+    assert member.get(f"/report/{data['id']}").json() == data
+    assert member.get("/report/999999").status_code == 404
+    assert member.get("/report", {"status": "DONE"}).status_code == 400
+
+
+def test_member_does_not_see_others_reports(experiences):
+    mine = write_report(member_client(), level_90())
+    other = member_client("회원2")
+    theirs = write_report(other, kind="BUG", title="버그", content="화면이 깨져요")
+
+    listed = other.get("/report").json()
+    assert (listed["totalElements"], [r["id"] for r in listed["content"]]) == (1, [theirs["id"]])
+    assert other.get(f"/report/{mine['id']}").status_code == 404
+
+
+def test_admin_sees_every_report(experiences):
+    mine = write_report(member_client(), level_90())
+    theirs = write_report(member_client("회원2"), kind="BUG", title="버그", content="화면이 깨져요")
+    admin = member_client("관리자", is_staff=True)
+
+    listed = admin.get("/report").json()
+    assert [r["id"] for r in listed["content"]] == [theirs["id"], mine["id"]]
+    assert admin.get(f"/report/{mine['id']}").json() == mine
 
 
 def test_author_edits_open_report_and_changes_are_replaced(experiences):
@@ -200,12 +227,13 @@ def test_report_survives_author_withdrawal(experiences):
     response = member.delete("/auth/me", {"password": "correct-horse-42"}, format="json")
 
     assert response.status_code == 204, response.json()
-    assert APIClient().get(f"/report/{created['id']}").json()["author"] is None
+    admin = member_client("관리자", is_staff=True)
+    assert admin.get(f"/report/{created['id']}").json()["author"] is None
 
 
 def test_report_keeps_snapshot_after_data_changes(experiences):
     created = write_report(member_client(), level_90())
     Experience.objects.filter(level=90).delete()
 
-    change = APIClient().get(f"/report/{created['id']}").json()["changes"][0]
+    change = member_client("관리자", is_staff=True).get(f"/report/{created['id']}").json()["changes"][0]
     assert (change["label"], change["before"], change["after"]) == ("90레벨", 190000, 10000000)
